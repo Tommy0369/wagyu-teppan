@@ -351,6 +351,80 @@ html.rot #app {
   html.rot .banner-text b { font-size: var(--fs-md); }
   html.rot .banner-text span { display: none; }
 
+/* ---------- スマホ用の画面（横画面のスマホ・アプリ。JS が html に .phone を付ける）----------
+ * 本人指定 2026-10-28「携帯だと文字が小さくて見にくい。携帯に合わせた UI/UX に作り変える」
+ * 店を高さいっぱいに描き（上の帯をやめる）、左右の余白（--gut-l / --gut-r）に情報と操作を置く：
+ *   左＝日・時刻・売上（上）／スティック（下）　右＝一時停止・評判・クレーム（上）／作業・つかむ（下・縦に並べる）
+ *   いまの手がかり（ヒント）は、店の下の壁の上に1行で */
+html.phone #app { grid-template-rows: minmax(0, 1fr); padding: 0; position: relative; }
+html.phone #hud {
+  position: absolute; inset: 0; z-index: var(--z-hud); pointer-events: none; background: none; box-shadow: none;
+  display: grid; grid-template-columns: var(--gut-l) minmax(0, 1fr) var(--gut-r); grid-template-rows: auto auto auto 1fr;
+  align-content: start; row-gap: var(--s-2); padding: calc(env(safe-area-inset-top) + var(--s-2)) 0 0; min-height: 0;
+}
+html.phone .brand { display: none; }
+html.phone .stat { grid-auto-flow: row; gap: 0; padding-left: calc(env(safe-area-inset-left) + var(--s-3)); padding-right: var(--s-2); min-width: 0; }
+html.phone .stat-day { grid-column: 1; grid-row: 1; grid-template-columns: auto 1fr; align-items: baseline; }
+html.phone .stat-day small { margin-left: 3px; }
+html.phone .stat-day .lab { grid-column: 1 / -1; }
+html.phone .stat-clock { grid-column: 1; grid-row: 2; }
+html.phone .stat-sales { grid-column: 1; grid-row: 3; }
+html.phone .stat-rep, html.phone .stat-claim { grid-column: 3; padding-left: var(--s-3); padding-right: calc(env(safe-area-inset-right) + var(--s-3)); }
+html.phone .stat-rep { grid-row: 2; }
+html.phone .stat-claim { grid-row: 3; }
+html.phone .stat-claim .lab { display: block; }
+html.phone .stat .lab { font-size: var(--fs-xs); }
+html.phone .stat b { font-size: var(--fs-lg); }
+html.phone .stat-sales b { font-size: var(--fs-md); }
+html.phone .stat-day small { display: inline; }
+html.phone .clockbar { display: block; width: min(96px, 100%); }
+html.phone #btnPause {
+  grid-column: 3; grid-row: 1; justify-self: end; margin: 0 calc(env(safe-area-inset-right) + var(--s-3)) 0 0; pointer-events: auto;
+}
+html.phone #stage { background: #0c0e13; }
+/* 操作：左下にスティック、右下に「作業」「つかむ」を縦に（親指の届くところ） */
+html.phone #ctrl { position: absolute; inset: 0; background: transparent; box-shadow: none; pointer-events: none; padding: 0; }
+html.phone #touch {
+  position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none; align-items: flex-end;
+  padding: 0 calc(env(safe-area-inset-right) + var(--s-3)) calc(env(safe-area-inset-bottom) + var(--s-3)) calc(env(safe-area-inset-left) + var(--s-2));
+}
+html.phone #stick, html.phone .tbtn { pointer-events: auto; }
+html.phone #stick { width: 112px; height: 112px; background: rgba(17, 19, 26, .55); }
+html.phone #stickKnob { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
+html.phone .tbtns { flex-direction: column; gap: var(--s-3); align-items: flex-end; }
+html.phone .tbtn.grab { width: 84px; height: 84px; font-size: var(--fs-md); }
+html.phone .tbtn.work { width: 70px; height: 70px; font-size: var(--fs-md); margin-right: 7px; }
+html.phone .tbtn small { font-size: var(--fs-xs); }
+/* いまの手がかり：店の下の壁の上に1行（店の幅まで） */
+html.phone #hint {
+  display: flex; position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + var(--s-1));
+  width: max-content; max-width: calc(var(--map-w) - 2 * var(--s-2)); min-height: 0; padding: var(--s-1) var(--s-3); gap: var(--s-3);
+  background: rgba(17, 19, 26, .86); border-radius: var(--r-full); box-shadow: var(--edge); font-size: var(--fs-sm);
+  white-space: nowrap; overflow: hidden; pointer-events: none;
+}
+html.phone .hint-next { display: inline; }
+html.phone .hint-target { margin-left: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+html.phone #hint:has(.hint-target:empty):has(.hint-next:empty) { display: none; }
+/* 知らせは手がかりのすぐ上（上はお客様の札と開店準備の帯なので、重ねない） */
+html.phone #app #toasts { top: auto; bottom: calc(env(safe-area-inset-bottom) + 44px); width: min(var(--map-w), 92%); align-content: end; }
+html.phone .toast { font-size: var(--fs-sm); line-height: 1.45; }
+html.phone body:has(#modalWrap:not([hidden])) #toasts { display: none; }   /* 日報・店の画面のボタンに重ねない */
+html.phone #banner { top: calc(env(safe-area-inset-top) + var(--s-2)); padding: var(--s-1) var(--s-2) var(--s-1) var(--s-4); max-width: var(--map-w); }
+html.phone .banner-text b { font-size: var(--fs-md); }
+html.phone .banner-text span { display: none; }
+/* 画面（日報・店・設定）：小さい高さでも読めるよう、余白を詰めて文字は下げない */
+html.phone #modalWrap { padding: calc(env(safe-area-inset-top) + var(--s-2)) calc(env(safe-area-inset-right) + var(--s-3)) var(--s-2) calc(env(safe-area-inset-left) + var(--s-3)); }
+html.phone #modal { padding: var(--s-4) var(--s-5); max-height: 100%; }
+html.phone #modal h2 { font-size: var(--fs-lg); }
+/* タイトル：1画面に収める（ボタンは横に並べる）。タイトルでは操作ボタンを出さない */
+html.phone #app[data-phase="title"] #touch, html.phone #app[data-phase="title"] #hint { visibility: hidden; }
+html.phone .title-hero { padding: 0; }
+html.phone .title-hero .kicker { font-size: var(--fs-md); }
+html.phone .title-hero h1 { font-size: 34px; margin: 0 0 var(--s-2); }
+html.phone .title-hero p { font-size: var(--fs-sm); margin-bottom: var(--s-3); }
+html.phone .title-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-2); max-width: 520px; margin-top: var(--s-3); }
+html.phone .title-meta { margin-top: var(--s-2); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }

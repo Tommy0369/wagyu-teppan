@@ -10,18 +10,21 @@
   var auto = null;   // デモプレイ：Bot が自分の代わりに遊ぶ（WKdebug.autoplay）。{ bot, speed, policy, t }
   var view = null, lastPhase = null, hintCache = null, hintT = 0, workSoundT = 0, warned = {};
   var input = { keys: {}, grab: false, work: false, stick: { x: 0, y: 0 }, tWork: false, pad: { x: 0, y: 0, work: false } };
-  var inputMode = 'key', padPrev = {};
+  var inputMode = 'key', padPrev = {};   // タッチ端末は下で 'touch' から始める（手がかりの表示を「つかむ」「作業」に）
 
   // ---------- 保存（使えない環境でも遊べる） ----------
   function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 保存できなくても続ける */ } }
   function load(k) { try { var t = localStorage.getItem(k); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
   var reducedMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   var coarse = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+  if (coarse) inputMode = 'touch';
   // lite＝軽量モード（スマホは自動でオン）：画面の細かさを1.5倍まで・粒を半分・重い端末では描くのを30コマに・夜の画面の間は描かない
   var settings = Object.assign({ sound: true, hints: null, reduced: reducedMq.matches, touch: coarse, lite: coarse }, load(SET_KEY) || {});
   // アプリとして入れる：Android・PC の Chrome は入れる案内を出せる（beforeinstallprompt）。iPhone は「ホーム画面に追加」の手順を見せる
   var installEvt = null;
-  var standalone = (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches)) || navigator.standalone === true;
+  // iPhone アプリ（ios/ の入れ物）の中で動いているか：入れ物が UA に WagyuTeppanApp を付ける
+  var inApp = /WagyuTeppanApp/.test(navigator.userAgent);
+  var standalone = inApp || (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches)) || navigator.standalone === true;
   var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault(); installEvt = e;
@@ -400,9 +403,25 @@
     }
   }
 
+  // スマホの横画面（高さ520px未満のタッチ端末）は、スマホ用の画面にする：店を高さいっぱいに描き、左右の余白に情報と操作を置く
+  function isPhone() {
+    var w = window.innerWidth, h = window.innerHeight, rot = document.documentElement.classList.contains('rot');
+    return coarse && Math.min(w, h) < 520 && (rot || w > h);
+  }
   function resize() {
-    var st = document.getElementById('stage');
+    var st = document.getElementById('stage'), root = document.documentElement;
+    view.phone = isPhone();
+    root.classList.toggle('phone', view.phone);
+    // 片側の余白の最小：スティック（112px）＋画面の切り欠き（safe area）
+    var probe = document.getElementById('safeProbe');
+    if (!probe) { probe = document.createElement('div'); probe.id = 'safeProbe'; probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)'; document.body.appendChild(probe); }
+    var cs = getComputedStyle(probe), inset = Math.max(parseFloat(cs.paddingLeft) || 0, parseFloat(cs.paddingRight) || 0);
+    view.gutMin = inset + 124;
     R.resize(view, st.clientWidth, st.clientHeight);
+    // 左右の余白（店の外）の幅を CSS に渡す：情報と操作ボタンをそこに並べる
+    root.style.setProperty('--gut-l', Math.max(0, view.ox) + 'px');
+    root.style.setProperty('--gut-r', Math.max(0, st.clientWidth - view.ox - view.T * E.MW) + 'px');
+    root.style.setProperty('--map-w', (view.T * E.MW) + 'px');
   }
 
   // スマホを縦に持っているときは、画面ごと90度回して横画面で遊ぶ
@@ -411,6 +430,7 @@
     var rot = coarse && h > w && w < 700;
     var root = document.documentElement;
     root.classList.toggle('rot', rot);
+    root.classList.toggle('phone', isPhone());   // 先に付けておく（#stage の大きさが決まる前に、スマホの並びにする）
     if (rot) { root.style.setProperty('--rot-w', h + 'px'); root.style.setProperty('--rot-h', w + 'px'); }
   }
   // Android など、固定できる端末は全画面＋横向きに固定する（できなくても遊べる）
@@ -441,7 +461,7 @@
     act.toTitle();
     // アプリ版：ファイルを端末にしまう（https のときだけ。手元のサーバーでは ?sw を付けたときだけ＝直したファイルが古いまま出ないように）
     try {
-      if ('serviceWorker' in navigator && (location.protocol === 'https:' || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && /[?&]sw\b/.test(location.search)))) {
+      if (!inApp && 'serviceWorker' in navigator && (location.protocol === 'https:' || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && /[?&]sw\b/.test(location.search)))) {
         navigator.serviceWorker.register('sw.js').catch(function () { /* 使えない場所ではそのまま */ });
       }
     } catch (e) { /* 埋め込み（claude.ai のページなど）では触るだけで止められる。そのまま遊べる */ }

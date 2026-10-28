@@ -19,6 +19,8 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     good: '#7cc48a', warn: '#e9b44c', bad: '#ef6461', noren: '#1e2a4a'
   };
   R.C = C;
+  // 店の上に描く文字の大きさ：スマホ（v.phone）は小さい画面で読めるよう、最小を2px・比率を2割上げる（本人指定 2026-10-28「携帯だと文字が小さい」）
+  function fz(v, k, min) { return v.phone ? Math.max(min + 2, Math.round(v.T * k * 1.2)) : Math.max(min, Math.round(v.T * k)); }
   var FONT = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif';
   var MINCHO = '"Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif';
 
@@ -33,19 +35,23 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     v.w = cssW; v.h = cssH;
     v.canvas.width = Math.round(cssW * v.dpr); v.canvas.height = Math.round(cssH * v.dpr);
     v.canvas.style.width = cssW + 'px'; v.canvas.style.height = cssH + 'px';
-    var rowsH = E.MH + (R.pixel ? 2 : 0);                // ドット絵は上の壁を3段にする
-    var fitH = cssH / (rowsH + 0.2);
+    // 上の壁は2段見せる。スマホは1段にして、そのぶん店を大きく（高さいっぱい・左右の余白に操作と情報を置く）
+    var wall = R.pixel ? (v.phone ? 1 : 2) : 0;
+    var rowsH = E.MH + wall;
+    var fitH = cssH / (rowsH + (v.phone ? 0.1 : 0.2));
     var T = Math.floor(Math.min(cssW / E.MW, fitH));
-    v.cam = T < 34 && fitH > T * 1.3;
+    v.cam = !v.phone && T < 34 && fitH > T * 1.3;
     if (v.cam) T = Math.floor(Math.min(fitH, 42));
-    if (R.pixel) {
-      // 32px の絵がくっきり見えるように、16px 刻みにそろえる（小さい画面はそのまま）
+    if (R.pixel && !v.phone) {
+      // 32px の絵がくっきり見えるように、16px 刻みにそろえる（小さい画面とスマホはそのまま＝少しでも大きく）
       if (v.cam) T = fitH >= 48 ? 48 : (fitH >= 32 ? 32 : Math.floor(fitH));
       else if (T >= 32) T = Math.floor(T / 16) * 16;
     }
+    // スマホは左右の余白に操作と情報を置くので、余白が足りなければ店を少し小さくする（片側 v.gutMin）
+    if (v.phone && v.gutMin) T = Math.min(T, Math.floor((cssW - 2 * v.gutMin) / E.MW));
     v.T = Math.max(16, T);
     v.ox = Math.floor((cssW - v.T * E.MW) / 2);
-    v.oy = Math.floor((cssH - v.T * rowsH) / 2) + (R.pixel ? 2 * v.T : 0);
+    v.oy = Math.floor((cssH - v.T * rowsH) / 2) + wall * v.T;
     v.camX = null;
   };
   R.follow = function (v, x, dt) {
@@ -182,7 +188,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     ctx.fillText(text, x, y + 1);
   }
   function tag(v, x, y, text, bg) {
-    var ctx = v.ctx, fs = Math.max(10, Math.round(v.T * 0.22));
+    var ctx = v.ctx, fs = fz(v, 0.22, 10);
     ctx.font = '700 ' + fs + 'px ' + FONT;
     var w = ctx.measureText(text).width + fs * 0.8;
     ctx.fillStyle = bg; rr(ctx, x - w / 2, y - fs * 0.7, w, fs * 1.4, fs * 0.7); ctx.fill();
@@ -203,7 +209,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     return (iconCache[d] = { cv: cv, sx: x0, sy: y0, sw: x1 - x0 + 1, sh: y1 - y0 + 1 });
   }
   function miniChip(v, x, y, text, bg, fg) {
-    var ctx = v.ctx, fs = Math.max(9, Math.round(v.T * 0.18));
+    var ctx = v.ctx, fs = fz(v, 0.18, 9);
     ctx.font = '700 ' + fs + 'px ' + FONT;
     var w = ctx.measureText(text).width + fs * 0.6, h = fs * 1.4;
     ctx.fillStyle = bg; rr(ctx, x - w / 2, y - h / 2, w, h, 3); ctx.fill();
@@ -211,7 +217,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 0.5);
   }
   function chip(v, x, y, text, bg, fg, border) {
-    var ctx = v.ctx, fs = Math.max(11, Math.round(v.T * 0.22));
+    var ctx = v.ctx, fs = fz(v, 0.22, 11);
     ctx.font = '700 ' + fs + 'px ' + FONT;
     var w = Math.max(fs * 2, ctx.measureText(text).width + fs * 0.7), h = fs * 1.45;
     ctx.fillStyle = bg; rr(ctx, x - w / 2, y - h / 2, w, h, h / 2); ctx.fill();
@@ -308,7 +314,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       ctx.fillStyle = 'rgba(' + C.glow + ',.55)'; ctx.fillRect(X, Y + T * 0.86, W, Math.max(1.5, T * 0.025));
       if (!c.unlocked) {
         ctx.fillStyle = 'rgba(12,14,19,.82)'; ctx.fillRect(X, Y - T, W, T * 2);
-        ctx.fillStyle = C.muted; ctx.font = '600 ' + Math.max(12, Math.round(T * 0.3)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = C.muted; ctx.font = '600 ' + fz(v, 0.3, 12) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('増設予定', X + W / 2, Y - T * 0.1);
         return;
       }
@@ -429,7 +435,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       case 'rack':
         ctx.fillStyle = '#4a4036'; rr(ctx, cx - T * 0.34, cy - T * 0.3, T * 0.68, T * 0.56, T * 0.06); ctx.fill();
         if (st.plates > 0) drawItem(v, { k: 'plates', n: st.plates, dirty: false }, cx, cy + T * 0.08, 0.95);
-        else { ctx.fillStyle = C.bad; ctx.font = '700 ' + Math.max(11, Math.round(T * 0.24)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('皿なし', cx, cy); }
+        else { ctx.fillStyle = C.bad; ctx.font = '700 ' + fz(v, 0.24, 11) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('皿なし', cx, cy); }
         break;
       case 'sink': case 'washer':
         ctx.fillStyle = st.type === 'sink' ? '#9aa6b1' : '#8796a5'; rr(ctx, cx - T * 0.34, cy - T * 0.3, T * 0.68, T * 0.56, T * 0.08); ctx.fill();
@@ -546,19 +552,19 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       if (g.state === 'waiting' || g.state === 'ordering') patienceBar(v, gx, py(v, 0.98), g.size * T * 0.9, g.state === 'ordering' ? 1 : g.patience / g.pMax);
       if (g.state === 'ordering') chip(v, gx, py(v, 1.62), '注文を考えています…', 'rgba(17,19,26,.85)', C.cream);
       if (g.anniv) tag(v, px(v, X0) + T * 0.2, py(v, 2.25), '記念日', '#8a2f55');
-      if (g.mc) { ctx.fillStyle = C.gold; ctx.font = '700 ' + Math.max(11, Math.round(T * 0.26)) + 'px ' + FONT; ctx.textAlign = 'right'; ctx.fillText('✦ 思い出', px(v, X0 + g.size) - 2, py(v, 2.2)); }
+      if (g.mc) { ctx.fillStyle = C.gold; ctx.font = '700 ' + fz(v, 0.26, 11) + 'px ' + FONT; ctx.textAlign = 'right'; ctx.fillText('✦ 思い出', px(v, X0 + g.size) - 2, py(v, 2.2)); }
       if (g.mcT > 0 && !g.mc) progressBar(v, gx, py(v, 2.1), g.size * T * 0.7, g.mcT / E.mcNeed(g), C.gold);
     });
   }
   function orderBubble(v, s, gu, x, y) {
     var parts = bubbleParts(gu);
     if (!parts.length) { chip(v, x, y, '✓', 'rgba(124,196,138,.9)', C.ink); return; }
-    var fs = Math.max(11, Math.round(v.T * 0.22));
+    var fs = fz(v, 0.22, 11);
     parts.forEach(function (p, i) {
       var yy = y - i * fs * 1.55;
       if (!p.row) { chip(v, x, yy, p.t, p.bg, p.fg, p.border); return; }
       // 小さい札を横に並べる（前菜の残り・ドリンク・ご飯）
-      var ctx = v.ctx, mfs = Math.max(9, Math.round(v.T * 0.18)); ctx.font = '700 ' + mfs + 'px ' + FONT;
+      var ctx = v.ctx, mfs = fz(v, 0.18, 9); ctx.font = '700 ' + mfs + 'px ' + FONT;
       var ih = mfs * 1.4;
       var ws = p.row.map(function (r) { return r.icon ? ih * 0.9 : ctx.measureText(r.t).width + mfs * 0.6; }), gap = 2, tw = ws.reduce(function (a, b) { return a + b; }, 0) + gap * (ws.length - 1), xx = x - tw / 2;
       p.row.forEach(function (r, k) {
@@ -996,14 +1002,21 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       if ((it.n || 1) > 1) pending.push({ badge: String(it.n), x: cx + 12, y: cy - 8 });
       return;
     }
-    if (it.k === 'rice') { var rc = E.classify(it); blit(b, 'rice_' + (rc === 'ok' ? 'ok' : rc === 'burnt' ? 'burnt' : 'raw'), cx - 8, cy - 6); return; }
-    if (it.k === 'drink') {
-      n = Math.min(it.n || 1, 3);
-      for (i = n - 1; i >= 0; i--) {
-        if (it.d === 'sake') blit(b, 'sake_set', cx - 7 + i * 4, cy - 10 - i);
-        else if (atlasReady(ITEMSA)) blitAtlas(b, ITEMSA, it.d, cx - 3 + i * 5, cy + 5 - i, false);
-      }
+    if (it.k === 'rice') {
+      var rc = E.classify(it), rn = Math.min(it.n || 1, 3);
+      for (i = rn - 1; i >= 0; i--) blit(b, 'rice_' + (rc === 'ok' ? 'ok' : rc === 'burnt' ? 'burnt' : 'raw'), cx - 8 + i * 4, cy - 6 - i * 3);
       if ((it.n || 1) > 1) pending.push({ badge: String(it.n), x: cx + 12, y: cy - 10 });
+      return;
+    }
+    if (it.k === 'drink') {
+      // 種類が混ざっていれば、それぞれの絵を並べる（水とビールを一緒に）
+      var dl = E.drinkList(it);
+      n = Math.min(dl.length, 3);
+      for (i = n - 1; i >= 0; i--) {
+        if (dl[i] === 'sake') blit(b, 'sake_set', cx - 7 + i * 4, cy - 10 - i);
+        else if (atlasReady(ITEMSA)) blitAtlas(b, ITEMSA, dl[i], cx - 3 + i * 5, cy + 5 - i, false);
+      }
+      if (dl.length > 1) pending.push({ badge: String(dl.length), x: cx + 12, y: cy - 10 });
       return;
     }
     if (it.k === 'apps') {
@@ -1036,7 +1049,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       pending.push({ bar: st.washT / (st.type === 'sink' ? D.work.wash : D.washerSec), x: cx, y: y - 4, color: '#9fd0ff' });
     if (st.type === 'board' && st.appT > 0 && st.item && st.item.k === 'plates')
       pending.push({ bar: st.appT / (D.work.app + D.work.appPer * ((st.item.n || 1) - 1)), x: cx, y: y - 4, color: '#9fdc7e' });
-    if (st.isNew && s.phase === 'prep') pending.push({ tag: 'NEW', x: cx, y: y - 2 });
+    if (st.isNew && s.phase === 'prep') pending.push({ tag: _v && _v.phone ? '新' : 'NEW', x: cx, y: y - 2 });   // スマホは1文字（並ぶと重なった）
     if (lifted) { b.ctx.strokeStyle = C.gold; b.ctx.lineWidth = 1; b.ctx.strokeRect(x + 0.5, y + 0.5, 31, 39); }
   }
 
@@ -1246,7 +1259,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       var X = px(v, c.x0), Y = py(v, 3), W = v.T * c.seats;
       if (!c.unlocked) {
         ctx.fillStyle = 'rgba(30,20,22,.78)'; ctx.fillRect(X, Y - v.T, W, v.T * 2);
-        ctx.fillStyle = C.cream; ctx.font = '600 ' + Math.max(12, Math.round(v.T * 0.3)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = C.cream; ctx.font = '600 ' + fz(v, 0.3, 12) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('増設予定', X + W / 2, Y - v.T * 0.1);
         return;
       }
@@ -1262,7 +1275,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     pending.forEach(function (o) {
       var X = v.ox + o.x * k, Y = v.oy - EXT * v.T + o.y * k;
       if (o.badge) badge(v, X, Y, o.badge, o.bg);
-      else if (o.text) { ctx.fillStyle = C.bad; ctx.font = '700 ' + Math.max(11, Math.round(v.T * 0.24)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.text, X, Y); }
+      else if (o.text) { ctx.fillStyle = C.bad; ctx.font = '700 ' + fz(v, 0.24, 11) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.text, X, Y); }
       else if (o.bar != null) progressBar(v, X, Y, v.T * 0.7, o.bar, o.color);
       else if (o.tag) tag(v, X, Y, o.tag, o.bg || '#8a5a1c');
     });
@@ -1302,7 +1315,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       var c = g.counter ? E.counterById(s, g.counter) : null;
       if (!c) return;
       // 札が横に重なる大きさのときは、1人おきに上下へずらす
-      var stagger = T < 52, fsB = Math.max(11, Math.round(T * 0.22)), topB = py(v, 0.86);
+      var stagger = T < 52, fsB = fz(v, 0.22, 11), topB = py(v, 0.86);
       var X0 = c.x0 + (g.off || 0);   // 相席なら、組の先頭の席から
       if (g.state === 'waiting') g.guests.forEach(function (gu, i) {
         // 狭い画面では1席おきに上へずらす。ずらす幅は、左隣の札の段数ぶん（2段の札でも重ならない）
@@ -1320,11 +1333,11 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       if (g.state === 'ordering') chip(v, gx, py(v, 1.42), g.size < 3 ? '注文中…' : '注文を考えています…', 'rgba(17,19,26,.85)', C.cream);
       // 記念日の札は左、思い出は右。記念日の小さい組（2人まで）は思い出を「✦」だけに（重なって読めなかった 2026-10-28）
       if (g.anniv) tag(v, Math.max(px(v, X0) + T * 0.2, v.ox + T * 0.42), py(v, 2.3), '記念日', '#8a2f55');
-      if (g.mc) { ctx.fillStyle = C.gold; ctx.font = '700 ' + Math.max(11, Math.round(T * 0.26)) + 'px ' + FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(g.anniv && g.size <= 2 ? '✦' : '✦ 思い出', px(v, X0 + g.size) - 2, py(v, 2.3)); }
+      if (g.mc) { ctx.fillStyle = C.gold; ctx.font = '700 ' + fz(v, 0.26, 11) + 'px ' + FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(g.anniv && g.size <= 2 ? '✦' : '✦ 思い出', px(v, X0 + g.size) - 2, py(v, 2.3)); }
       // 全員に肉をお出しした組＝最後の肉のフランベどき（思い出づくりがいちばん喜ばれる）
       else if ((g.state === 'waiting' || g.state === 'eating') && !(g.mcT > 0) && E.mcStage(g) === 'last') {
         // 2人までの組は短く。記念日の札と並ぶときは、1段下（鉄板の縁）へ
-        var lab = g.size <= 2 ? 'フランベ' : 'フランベどき', fsT = Math.max(10, Math.round(T * 0.22)), ty = g.anniv && g.size <= 2 ? 2.74 : 2.3;
+        var lab = g.size <= 2 ? 'フランベ' : 'フランベどき', fsT = fz(v, 0.22, 10), ty = g.anniv && g.size <= 2 ? 2.74 : 2.3;
         ctx.font = '700 ' + fsT + 'px ' + FONT;
         var tw = ctx.measureText(lab).width + fsT * 0.8, pulse = v.reduced ? 1 : 0.82 + 0.18 * Math.sin(_t * 6);
         ctx.save(); ctx.globalAlpha = pulse; tag(v, Math.max(px(v, X0) + tw / 2, px(v, X0 + g.size) - 2 - tw / 2), py(v, ty), lab, '#b4481a'); ctx.restore();

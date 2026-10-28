@@ -105,12 +105,14 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       var st = tg.st, def = D.stations[st.type];
       name = def.name;
       if (def.provides) {
-        var rawH = h && ((h.k === 'steak' && h.t === 0 && h.m === def.provides) || (h.k === 'drink' && h.d === def.provides));
+        var rawH = h && ((h.k === 'steak' && h.t === 0 && h.m === def.provides) || (h.k === 'drink' && D.drinks[def.provides]) || (h.k === 'rice' && h.t === 0 && def.provides === 'rice' && E.carryMax(s, 'rice') > 1));
+        var hmax = h ? E.carryMax(s, h.k) : 0, hn = h ? (h.k === 'drink' ? E.drinkList(h).length : (h.n || 1)) : 0;
         if (!h) G(def.short + 'を取る');
-        else if (rawH && (h.n || 1) < D.player.steakCarryMax) G('もう1つ取る（いま' + (h.n || 1) + '）');
-        else if (rawH) a.push(D.player.steakCarryMax + 'つまで持てます');
+        else if (rawH && hn < hmax) G((h.k === 'drink' ? def.short + 'も取る' : 'もう1つ取る') + '（いま' + hn + '）');
+        else if (rawH) a.push(hmax + (h.k === 'drink' ? '杯' : 'つ') + 'まで持てます');
         else if (h.k === 'rice' && def.provides === 'rice' && h.t === 0) G('戻す');
-        if (rawH) W('戻す');
+        var canBack = h && ((h.k === 'steak' && h.t === 0 && h.m === def.provides) || (h.k === 'drink' && E.drinkList(h).indexOf(def.provides) >= 0) || (h.k === 'rice' && h.t === 0 && def.provides === 'rice'));
+        if (canBack) W(h.k === 'drink' ? def.short + 'を戻す' : '戻す');
       } else if (st.type === 'board') {
         var cleanB = h && h.k === 'plates' && !h.dirty;
         if (cleanB && (!st.item || (st.item.k === 'plates' && st.item.n < D.work.appMax))) G('皿を並べる（' + D.work.appMax + '皿まで）');
@@ -166,7 +168,10 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       // ガーリックライス：焼き上がったら手ぶらでも、手に持っていても、そのまま出せる
       if (!h && riceOk(it) && E.servableGuests(s, c, it).length) G('ご飯をお出しする');
       if (riceOk(h)) { if (E.servableGuests(s, c, h).length) G('ご飯をお出しする'); else a.push(esc(E.whyNot(s, c, h))); }
-      if (h && (h.k === 'drink' || h.k === 'apps')) { if (E.servableGuests(s, c, h).length) G(holdName({ k: h.k, d: h.d, n: 1 }) + 'を出す'); else a.push(esc(E.whyNot(s, c, h))); }
+      if (h && (h.k === 'drink' || h.k === 'apps')) {
+        var sv = E.servableGuests(s, c, h);
+        if (sv.length) G(h.k === 'drink' ? D.drinks[sv[0].gu.order.drink].name + 'を出す' : '前菜を出す'); else a.push(esc(E.whyNot(s, c, h)));
+      }
       if ((!h || (h.k === 'plates' && h.dirty)) && dirty) G('汚れた皿を回収');
       else if (!h && it && !(riceOk(it) && E.servableGuests(s, c, it).length)) G(holdName(it) + 'を下げる');
       var w = E.workable(s, p);
@@ -187,8 +192,13 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       var nm = E.meatName(h.m);
       return nm + (cl === 'raw' ? '' : '（' + D.doneness.name[cl] + '）') + ((h.n || 1) > 1 ? '×' + h.n : '');
     }
-    if (h.k === 'rice') return 'ご飯';
-    if (h.k === 'drink') return D.drinks[h.d].name + ((h.n || 1) > 1 ? '×' + h.n : '');
+    if (h.k === 'rice') return 'ご飯' + ((h.n || 1) > 1 ? '×' + h.n : '');
+    if (h.k === 'drink') {
+      // 混ざっていれば「水・ビール×2」のように種類ごとに
+      var cnt = {}, order = [];
+      E.drinkList(h).forEach(function (d) { if (!cnt[d]) order.push(d); cnt[d] = (cnt[d] || 0) + 1; });
+      return order.map(function (d) { return D.drinks[d].name + (cnt[d] > 1 ? '×' + cnt[d] : ''); }).join('・');
+    }
     if (h.k === 'apps') return '前菜' + ((h.n || 1) > 1 ? '×' + h.n : '');
     if (h.k === 'dish') return holdName(h.food) + 'の皿' + ((h.n || 1) > 1 ? '（＋皿' + (h.n - 1) + '枚）' : '');
     if (h.k === 'station') return D.stations[h.st.type].name;

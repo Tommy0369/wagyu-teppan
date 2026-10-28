@@ -70,7 +70,7 @@ WK.DATA = {
     trash: { name: 'ゴミ箱', short: 'ゴミ箱', label: 'ゴミ箱' }
   },
 
-  player: { speed: 4.4, radius: 0.3, plateCarryMax: 6, steakCarryMax: 4 },
+  player: { speed: 4.4, radius: 0.3, plateCarryMax: 6, steakCarryMax: 4, trayDrinkMax: 6, trayRiceMax: 4 },
 
   day: {
     total: 15,
@@ -207,6 +207,8 @@ WK.DATA = {
       { id: 'sink', name: '洗い場', price: 80000, desc: '洗う場所を増やす', station: 'sink', max: 2, w: 2 },
       { id: 'washer', name: '食洗機', price: 220000, desc: '入れた皿を自動で洗う（1枚1.6秒・最大8枚）', station: 'washer', max: 1, w: 2 },
       { id: 'sneakers', name: 'スニーカー', price: 60000, desc: '移動が15%速くなる', max: 1, w: 1.5 },
+      // お盆（本人指定 2026-10-28「ご飯を3つ4つ持てるように。お盆を手に入れたら持てるようになるアップデート」）
+      { id: 'tray', name: 'お盆', price: 30000, desc: 'ご飯を4つ・ドリンクを6杯まで、まとめて運べる（ないときは、ご飯1つ・ドリンク4杯）', max: 1, w: 2 },
       { id: 'highHeat', name: '高火力鉄板', price: 150000, desc: '焼く速さ×1.33。ちょうどいい時間も短くなる', max: 1, w: 1 },
       { id: 'reservation', name: '予約台帳', price: 90000, desc: '来店の山をならす', max: 1, w: 1.5 },
       { id: 'counter', name: '鉄板カウンター増設', price: 250000, desc: '4席のカウンターが1つ増え、皿も4枚つく（スタッフを2人以上雇うと並ぶ。ひとりでは回らないため）', max: 1, w: 1.5, staffNeed: 2, plates: 4 },
@@ -218,7 +220,7 @@ WK.DATA = {
     ],
     firstNight: ['plates', 'bench', 'sink'],
     // この日の夜は必ず並べる（次のステップを見せる）
-    fixedNights: { 3: ['sakeShelf', 'wineCellar'] }
+    fixedNights: { 2: ['tray', 'plates', 'bench'], 3: ['sakeShelf', 'wineCellar'] }
   },
 
   cards: [

@@ -406,11 +406,22 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     return 'raw';
   }
   E.classify = classify;
+  // ドリンクは種類を混ぜて持てる（水とビールを一緒に。本人指定 2026-10-28）。ds＝持っている順の一覧。d・n は先頭と杯数（古い読み手のため）
+  function drinkList(h) { if (h.ds) return h.ds; var a = []; for (var i = 0; i < (h.n || 1); i++) a.push(h.d); return a; }
+  E.drinkList = drinkList;
+  function setDrinks(p, ds) { p.hold = ds.length ? { k: 'drink', ds: ds, d: ds[0], n: ds.length } : null; }
+  // 持てる数：お盆（夜の店で買う）があると、ご飯4つ・ドリンク6杯まで
+  E.carryMax = function (s, k) {
+    var tray = s.flags && s.flags.tray;
+    if (k === 'drink') return tray ? D.player.trayDrinkMax : D.player.steakCarryMax;
+    if (k === 'rice') return tray ? D.player.trayRiceMax : 1;
+    return D.player.steakCarryMax;
+  };
   function itemCost(item) {
     if (!item) return 0;
     if (item.k === 'steak') return D.money.cost[item.m] * (item.n || 1);
-    if (item.k === 'rice') return D.money.cost.rice;
-    if (item.k === 'drink') return D.money.cost[item.d] * (item.n || 1);
+    if (item.k === 'rice') return D.money.cost.rice * (item.n || 1);
+    if (item.k === 'drink') return drinkList(item).reduce(function (a, d) { return a + D.money.cost[d]; }, 0);
     if (item.k === 'app') return D.money.cost.app;
     if (item.k === 'apps') return D.money.cost.app * (item.n || 1);
     return 0;
@@ -535,20 +546,35 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       var kind = def.provides;
       // 肉は切り分けたものが入っている：つかむ＝1枚ずつ取る（4枚まで重ねて持てる）。戻すのは作業（長押し）。皿棚と同じ
       if (!h) {
-        var item = (kind === 'rice') ? { k: 'rice', t: 0 } : D.drinks[kind] ? { k: 'drink', d: kind, n: 1 } : { k: 'steak', m: kind, t: 0, n: 1 };
+        var item = (kind === 'rice') ? { k: 'rice', t: 0, n: 1 } : D.drinks[kind] ? { k: 'drink', ds: [kind], d: kind, n: 1 } : { k: 'steak', m: kind, t: 0, n: 1 };
         p.hold = item;
         s.stats.cost += itemCost(item);
         fx(s, { t: 'pick', x: px, y: py });
         return;
       }
-      // 肉・ドリンクは、続けて押すと4つまで重ねて持てる
-      if ((h.k === 'steak' && h.m === kind && h.t === 0) || (h.k === 'drink' && h.d === kind)) {
+      // ドリンクは種類を混ぜて重ねて持てる（4杯まで。お盆があれば6杯）
+      if (h.k === 'drink' && D.drinks[kind]) {
+        var dl = drinkList(h), dmax = E.carryMax(s, 'drink');
+        if (dl.length >= dmax) return toast(s, 'これ以上は持てません（' + dmax + '杯まで' + (s.flags.tray ? '' : '。お盆があれば' + D.player.trayDrinkMax + '杯') + '）。戻すときは作業（長押し）', 'info');
+        setDrinks(p, dl.concat([kind])); s.stats.cost += D.money.cost[kind];
+        fx(s, { t: 'pick', x: px, y: py });
+        return;
+      }
+      // 肉は、続けて押すと4つまで重ねて持てる
+      if (h.k === 'steak' && h.m === kind && h.t === 0) {
         if ((h.n || 1) >= D.player.steakCarryMax) return toast(s, 'これ以上は持てません（' + D.player.steakCarryMax + 'つまで）。戻すときは作業（長押し）', 'info');
         h.n = (h.n || 1) + 1; s.stats.cost += D.money.cost[kind];
         fx(s, { t: 'pick', x: px, y: py });
         return;
       }
       var same = (h.k === 'rice' && kind === 'rice' && h.t === 0);
+      // ご飯：お盆があれば4つまで重ねて持てる。お盆がなければ、もう一度押すと戻す（前と同じ）
+      if (same && E.carryMax(s, 'rice') > 1) {
+        if ((h.n || 1) >= E.carryMax(s, 'rice')) return toast(s, 'これ以上は持てません（' + E.carryMax(s, 'rice') + 'つまで）。戻すときは作業（長押し）', 'info');
+        h.n = (h.n || 1) + 1; s.stats.cost += D.money.cost.rice;
+        fx(s, { t: 'pick', x: px, y: py });
+        return;
+      }
       if (same) { s.stats.cost -= itemCost(h); p.hold = null; fx(s, { t: 'place', x: px, y: py }); return; }
       if (h.k === 'steak' && h.t === 0 && D.meats[kind]) return toast(s, E.meatName(h.m) + 'を持っています。焼くか、' + E.meatName(h.m) + 'のショーケースへ戻しましょう', 'info');
       return toast(s, '手がふさがっています', 'info');
@@ -661,7 +687,7 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       if (item.k === 'steak') return o.gu.order.main === item.m && !o.gu.got.main;
       if (item.k === 'rice') return o.gu.order.rice && !o.gu.got.rice;
       if (item.k === 'app' || item.k === 'apps') return (o.gu.got.apps || 0) < (o.gu.order.apps || 0);
-      if (item.k === 'drink') return o.gu.order.drink === item.d && !o.gu.got.drink;
+      if (item.k === 'drink') return drinkList(item).indexOf(o.gu.order.drink) >= 0 && !o.gu.got.drink;
       return false;
     });
   }
@@ -688,7 +714,7 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
         else out.push({ gu: gu, idx: idx, g: g, subst: substOf(have, want) });
       } else if (item.k === 'rice') { if (gu.order.rice && !gu.got.rice) out.push({ gu: gu, idx: idx, g: g, subst: null }); }
       else if (item.k === 'app' || item.k === 'apps') { if ((gu.got.apps || 0) < (gu.order.apps || 0)) out.push({ gu: gu, idx: idx, g: g, subst: null }); }
-      else if (item.k === 'drink') { if (gu.order.drink === item.d && !gu.got.drink) out.push({ gu: gu, idx: idx, g: g, subst: null }); }
+      else if (item.k === 'drink') { if (gu.order.drink && drinkList(item).indexOf(gu.order.drink) >= 0 && !gu.got.drink) out.push({ gu: gu, idx: idx, g: g, subst: null }); }
     });
     return out;
   }
@@ -779,18 +805,23 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       serveTo(s, c, ao, { k: 'app' }, px);
       return;
     }
-    // ドリンク（重ねて持っていれば、1杯ずつ出す）
+    // ドリンク（重ねて持っていれば、そのお客様の頼んだ1杯を出す。種類が混ざっていてもよい）
     if (h && h.k === 'drink') {
       var so = pickGuest(servableGuests(s, c, h), h, i);
       if (!so) return toast(s, whyNot(s, c, h), 'info');
-      if ((h.n || 1) > 1) h.n--; else p.hold = null;
-      serveTo(s, c, so, { k: 'drink', d: h.d, n: 1 }, px);
+      var dl2 = drinkList(h).slice(), dd = so.gu.order.drink;
+      dl2.splice(dl2.indexOf(dd), 1); setDrinks(p, dl2);
+      serveTo(s, c, so, { k: 'drink', d: dd, ds: [dd], n: 1 }, px);
       return;
     }
     // 焼き上がったガーリックライス：手に持ったまま出せる（2026-10-28 本人の指摘「出来上がっても提供できない」）
     if (h && h.k === 'rice' && classify(h) === 'ok') {
       var ro = pickGuest(servableGuests(s, c, h), h, i);
-      if (ro) { p.hold = null; serveTo(s, c, ro, h, px, true); return; }
+      if (ro) { var one = { k: 'rice', t: h.t, n: 1 }; if ((h.n || 1) > 1) h.n--; else p.hold = null; serveTo(s, c, ro, one, px, true); return; }
+      // お盆があれば、焼き上がったご飯を重ねて持てる（4つまで）
+      if (slot && slot.k === 'rice' && classify(slot) === 'ok' && (h.n || 1) < E.carryMax(s, 'rice')) {
+        h.n = (h.n || 1) + 1; c.slots[i] = null; fx(s, { t: 'pick', x: px, y: py }); return;
+      }
       if (slot || c.needsScrape) return toast(s, whyNot(s, c, h), 'info');   // 空いた鉄板がなければ理由だけ
     }
     if (h && h.k === 'rice' && classify(h) === 'burnt') return toast(s, '焦げています。ゴミ箱へ', 'warn');
@@ -882,8 +913,9 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     if (tg.k === 'station') {
       var st = tg.st;
       // 焼く前の肉・ドリンクを、同じ種類のショーケース・サーバーへ戻す
-      var back = p.hold && ((p.hold.k === 'steak' && p.hold.t === 0 && p.hold.m) || (p.hold.k === 'drink' && p.hold.d));
-      if (back && D.stations[st.type].provides === back) return { kind: 'returnMeat', st: st, need: D.work.returnPlates, prog: st.takeT || 0 };
+      var prov = D.stations[st.type].provides;
+      var back = p.hold && ((p.hold.k === 'steak' && p.hold.t === 0 && p.hold.m) || (p.hold.k === 'drink' && drinkList(p.hold).indexOf(prov) >= 0 && prov) || (p.hold.k === 'rice' && p.hold.t === 0 && 'rice'));
+      if (back && prov === back) return { kind: 'returnMeat', st: st, need: D.work.returnPlates, prog: st.takeT || 0 };
       // まな板の皿 → 前菜
       if (st.type === 'board' && st.item && st.item.k === 'plates') return { kind: 'app', st: st, need: D.work.app + D.work.appPer * ((st.item.n || 1) - 1), prog: st.appT || 0 };
       if (st.type === 'sink' && st.dirty > 0) return { kind: 'wash', st: st, need: D.work.wash, prog: st.washT };
@@ -913,7 +945,14 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       }
     } else if (w.kind === 'returnMeat') {
       w.st.takeT = (w.st.takeT || 0) + dt;
-      if (w.st.takeT >= w.need) { w.st.takeT = 0; s.stats.cost -= itemCost(p.hold); p.hold = null; fx(s, { t: 'place', x: w.st.x + 0.5, y: w.st.y + 0.5 }); }
+      if (w.st.takeT >= w.need) {
+        w.st.takeT = 0;
+        // ドリンクが混ざっていれば、このサーバーの種類だけを戻す
+        var pv = D.stations[w.st.type].provides;
+        if (p.hold.k === 'drink') { var keep = drinkList(p.hold).filter(function (d) { return d !== pv; }); s.stats.cost -= (drinkList(p.hold).length - keep.length) * D.money.cost[pv]; setDrinks(p, keep); }
+        else { s.stats.cost -= itemCost(p.hold); p.hold = null; }
+        fx(s, { t: 'place', x: w.st.x + 0.5, y: w.st.y + 0.5 });
+      }
     } else if (w.kind === 'wash') {
       w.st.washT += dt;
       if (w.st.washT >= w.need) { w.st.washT = 0; w.st.dirty--; w.st.clean++; fx(s, { t: 'washDone', x: w.st.x + 0.5, y: w.st.y + 0.5 }); }

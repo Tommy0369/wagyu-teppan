@@ -56,7 +56,7 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       if (!it) return;
       if (it.k === 'steak' && E.classify(it) !== 'burnt') pipe[it.m] += (it.n || 1);
       if (it.k === 'rice' && E.classify(it) !== 'burnt') pipe.rice++;
-      if (it.k === 'drink') pipe[it.d] += (it.n || 1);
+      if (it.k === 'drink') E.drinkList(it).forEach(function (d) { pipe[d]++; });
       if (it.k === 'apps') pipe.app += (it.n || 1);
     };
     s.counters.forEach(function (c) { c.slots.forEach(count); });
@@ -343,10 +343,10 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       return tra ? T(tra.x, tra.y, 'grab', '余った前菜を下げる（ロス）') : null;
     }
     if (h.k === 'drink') {
-      var tgt = null;
-      waitingGroups(s).forEach(function (o) { if (!tgt) o.g.guests.forEach(function (gu, gi) { if (!tgt && gu.order.drink === h.d && !gu.got.drink) tgt = { c: o.c, i: (o.g.off || 0) + gi }; }); });
-      if (tgt) return T(tgt.c.x0 + tgt.i, 3, 'grab', D.drinks[h.d].name + 'を出す');
-      var back = nearestStation(s, p, function (st) { return D.stations[st.type].provides === h.d; });
+      var tgt = null, hl = E.drinkList(h);
+      waitingGroups(s).forEach(function (o) { if (!tgt) o.g.guests.forEach(function (gu, gi) { if (!tgt && hl.indexOf(gu.order.drink) >= 0 && !gu.got.drink) tgt = { c: o.c, i: (o.g.off || 0) + gi, d: gu.order.drink }; }); });
+      if (tgt) return T(tgt.c.x0 + tgt.i, 3, 'grab', D.drinks[tgt.d].name + 'を出す');
+      var back = nearestStation(s, p, function (st) { return hl.indexOf(D.stations[st.type].provides) >= 0; });
       return back ? T(back.x, back.y, 'work', 'ドリンクを戻す（作業・長押し）') : null;
     }
     if (h.k === 'dish') {
