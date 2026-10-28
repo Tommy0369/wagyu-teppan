@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11131a">
+<title>和牛の刀 鉄板十五日</title>
+<meta name="description" content="鉄板焼きの店を15日間まわす、見下ろし型の調理×経営ゲーム">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<!-- ホーム画面に追加すると、全画面のアプリとして開く（iPhone・Android） -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="鉄板十五日">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" data-phase="title">
+  <header id="hud" aria-label="営業の状況">
+    <div class="brand" aria-hidden="true">和牛の刀</div>
+    <div class="stat stat-day"><span class="lab">営業</span><b id="hDay">1日目</b><small>／15日</small></div>
+    <div class="stat stat-clock"><span class="lab">時刻</span><b id="hClock">17:00</b><span class="clockbar" aria-hidden="true"><i id="hClockBar"></i></span></div>
+    <div class="stat stat-sales"><span class="lab">今日の売上</span><b id="hSales">0円</b></div>
+    <div class="stat stat-rep"><span class="lab">評判</span><b id="hRep">★4.0</b></div>
+    <div class="stat stat-claim"><span class="lab">クレーム</span><b id="hClaim" aria-label="クレーム0件（3件でその日は失敗）"><i></i><i></i><i></i></b></div>
+    <button id="btnPause" class="iconbtn" type="button" aria-label="一時停止とメニュー">Ⅱ</button>
+  </header>
+
+  <main id="stage">
+    <canvas id="cv" aria-label="店内の様子" role="img"></canvas>
+    <div id="banner" hidden>
+      <div class="banner-text"><b id="bannerTitle">開店準備</b><span id="bannerSub">設備は「つかむ」で持ち上げて、好きな場所へ動かせます</span></div>
+      <button id="btnOpen" class="btn primary" type="button">開店する<kbd>Enter</kbd></button>
+    </div>
+    <div id="toasts" aria-live="polite"></div>
+  </main>
+
+  <footer id="ctrl">
+    <div id="hint" aria-live="off">
+      <span id="hintNext" class="hint-next"></span>
+      <span id="hintTarget" class="hint-target"></span>
+    </div>
+    <div id="touch" hidden>
+      <div id="stick" aria-hidden="true"><div id="stickKnob"></div></div>
+      <div class="tbtns">
+        <button id="tWork" class="tbtn work" type="button" aria-label="作業（長押し）">作業<small>長押し</small></button>
+        <button id="tGrab" class="tbtn grab" type="button" aria-label="つかむ・置く・出す">つかむ<small>置く・出す</small></button>
+      </div>
+    </div>
+  </footer>
+
+  <div id="modalWrap" hidden>
+    <div id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1"></div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/bot.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/art-images.js"></script>
+<script src="js/art-chars.js"></script>
+<script src="js/render.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
