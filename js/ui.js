@@ -227,8 +227,12 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     lastFocus = document.activeElement;
     el.modal.innerHTML = html;
     el.modalWrap.hidden = false;
+    // いつも上から見せる。最初のボタンが画面の外（遊び方の末尾の「戻る」など）なら、画面そのものにフォーカスする（監査 F05：末尾へ飛んでいた）
+    el.modal.scrollTop = 0; el.modalWrap.scrollTop = 0;
     var f = firstSel ? el.modal.querySelector(firstSel) : el.modal.querySelector('button');
-    (f || el.modal).focus();
+    var box = el.modal.getBoundingClientRect(), fr = f && f.getBoundingClientRect();
+    var seen = fr && fr.bottom <= Math.min(box.bottom, window.innerHeight) + 1;
+    (seen ? f : el.modal).focus({ preventScroll: true });
   }
   U.close = function () {
     el.modalWrap.hidden = true; el.modal.innerHTML = '';
@@ -298,11 +302,11 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       '<li><b>3. 皿を持って鉄板へ</b><span>皿を持って焼けた肉の前で「つかむ」。盛り付けて、そのままお出しします。ほかの鉄板のお客様の分なら、皿に盛って運べます。</span></li>' +
       '<li><b>皿の扱い</b><span>皿棚で「つかむ」を押すたびに1枚ずつ取れます（6枚まで重ねて持てる）。1皿出すごとに1枚減ります。戻すときは「作業（長押し）」。</span></li>' +
       '<li><b>取り違え</b><span>エンペラーをふつうのお客様に出すと「サービス」（差額はロス）。ふつうの肉をエンペラーのお客様に出すと★が下がります。ハラルのお客様にはハラル牛だけ。</span></li>' +
-      '<li><b>部位（ハード・鬼ムズ）</b><span>お肉がサーロイン・別格・和サーロに分かれ、6日目からシャトー・フィレ、鬼ムズは11日目から皇帝ロイン・皇帝ブリアンも。部位ごとのショーケースから取ります。注文の札の上の色と、肉に刺した旗の色で見分けます。部位ちがいは取り違え（★−1）。シャトー・フィレ・皇帝ブリアンは厚いので、焼けるのが少し遅い。</span></li>' +
+      '<li><b>部位（どの難易度も）</b><span>お肉は初日からサーロイン・別格・和サーロに分かれ、6日目からシャトー・フィレ、鬼ムズは11日目から皇帝ロイン・皇帝ブリアンも。部位ごとのショーケースから取ります。注文の札の上の色と、肉に刺した旗の色で見分けます。部位ちがいは取り違え（★−1）。シャトー・フィレ・皇帝ブリアンは厚いので、焼けるのが少し遅い。</span></li>' +
       '<li><b>4. 片付ける</b><span>帰ったお客様の皿を回収して洗い場へ。カウンターの全員が帰ったら、鉄板を掃除します（作業・長押し）。</span></li>' +
       '<li><b>相席と入口</b><span>4人席に空きが並んでいれば、待っている組がその人数ぶん隣に座ります（汚れた皿が残る席には座れません）。座れない人数なら外で待ちます。入口の札が、待っている組の人数です。</span></li>' +
       '<li><b>ガーリックライス</b><span>焼き上がったら、手ぶらで「つかむ」とその場でお出しします。手に持っても、頼んだお客様の前でお出しできます。</span></li>' +
-      '<li><b>思い出づくり（フランベ）</b><span>肉をお出しして、最後の肉をお出ししたら、お客様の前の鉄板で作業（長押し）。フランベの炎が上がり、思い出ができます。「フランベどき」の札が合図です。食事の前に撮ると時間がかかり、★もチップも増えません。最後の肉の思い出は、チップが多く、写真つきの口コミになりやすい（評判に2回ぶん効く）。★5は思い出づくりをした組だけ。記念日のお客様には必須です。</span></li>' +
+      '<li><b>思い出づくり（フランベ）</b><span>肉をお出しして、最後の肉をお出ししたら、お客様の前の鉄板で作業（長押し）。フランベの炎が上がり、思い出ができます。「フランベどき」の札が合図です。食事の前に撮ると時間がかかり、★は増えず、チップもわずか（最後の肉の約5分の1）です。最後の肉の思い出は、チップが多く、写真つきの口コミになりやすい（評判に2回ぶん効く）。★5は思い出づくりをした組だけ。記念日のお客様には必須です。</span></li>' +
       '<li><b>チップ</b><span>★4以上の組からいただけます。組の前（鉄板の内側）に立って焼いたり話したりした時間が長いほど、もらいやすく額も増えます。スタッフが前にいた時間は半分に数えます。</span></li>' +
       '<li><b>夜</b><span>利益で設備を買い、4日目からはスタッフも雇えます（焼き担当かキッチン担当のどちらか1人と、MC担当）。3日ごとに「お店の変化カード」を選びます。</span></li>' +
       '</ol>' +
@@ -369,7 +373,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       '<button class="btn" data-a="howto" type="button">遊び方</button>' +
       '<button class="btn" data-a="settings" type="button">設定</button>' +
       (s.phase === 'service' ? '<button class="btn ghost" data-a="retry" type="button">この日を開店前からやり直す</button>' : '') +
-      '<button class="btn ghost" data-a="title" type="button">タイトルへ（開店前の状態は保存済み）</button>' +
+      '<button class="btn ghost" data-a="title" type="button">タイトルへ（' + (act.saveStatus() === false ? '保存できていません。続きからは遊べません' : '開店前の状態は保存済み') + '）</button>' +
       '</div>'
     );
     on('[data-a="resume"]', function () { act.resume(); });
@@ -399,7 +403,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       k('★の平均', r.avgRating ? r.avgRating.toFixed(1) : '—', '口コミ +' + r.reviewsGood + (r.photoReviews ? '（写真つき ' + r.photoReviews + '）' : '')) +
       k('思い出づくり', r.mc + '組', '最後の肉で ' + (r.mcLast || 0) + '組・TIP ' + yen(r.tips)) +
       k('評判', '★' + r.repAfter.toFixed(1), (r.repAfter >= r.repBefore ? '+' : '−') + Math.abs(r.repAfter - r.repBefore).toFixed(2)) +
-      k('焼き加減ちがい', r.wrong + '枚', '焦がし ' + r.burnt + '枚・取り違え ' + (r.mixups || 0) + '枚') +
+      k('焼き加減ちがい', (r.wrongDone != null ? r.wrongDone : r.wrong) + '枚', '部位ちがい ' + (r.wrongPart || 0) + '枚・焦がし ' + r.burnt + '枚') +
       k('入れなかった組', r.lostGroups + '組', r.lostSales ? '約' + yen(r.lostSales) : '') +
       '</div>';
   }

@@ -189,7 +189,15 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     s.fx = keep; s.morning = morning;
     return json;
   };
+  // 読めない・欠けた保存は null（監査 F09：壊れたセーブで続きからが止まった）
   E.restore = function (json) {
+    try {
+      var r = restoreRaw(json);
+      if (!r || typeof r.day !== 'number' || !Array.isArray(r.counters) || !Array.isArray(r.stations) || !Array.isArray(r.players) || !Array.isArray(r.groups)) return null;
+      return r;
+    } catch (e) { return null; }
+  };
+  function restoreRaw(json) {
     var s = JSON.parse(json);
     if (!s || s.v !== D.saveVersion) return null;
     s.fx = [];
@@ -201,7 +209,7 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     if (s.phase === 'prep' && ensureCuts(s).length) s.morning = E.snapshot(s);
     E.placePlayer(s);
     return s;
-  };
+  }
   E.retryDay = function (s) {
     var r = E.restore(s.morning);
     if (!r) return s;
@@ -427,6 +435,12 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     return 0;
   }
   E.itemCost = itemCost;
+  function wrongQuestion(st) {
+    var d = st.wrongDone || 0, p = st.wrongPart || 0;
+    if (p && !d) return '頼まれたのと違う部位の肉を出したのが' + p + '枚ありました。その肉を、どのお客様の分だと思って焼いていましたか？';
+    if (d && !p) return '注文と違う焼き加減で出したのが' + d + '枚ありました。焼き上がりは、何を見て判断していましたか？';
+    return '注文と違う焼き加減が' + d + '枚、頼まれたのと違う部位が' + p + '枚ありました。出す肉は、何を見て決めていましたか？';
+  }
   function addLoss(s, item) {
     var c = itemCost(item);
     if (c > 0 && s.stats) { s.stats.loss += c; s.stats.lossItems++; }
@@ -733,6 +747,16 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     }
     return null;
   }
+  // ほかの鉄板で、同じ肉（代わりではない）を頼んだお客様がいる鉄板
+  function whereExact(s, item, except) {
+    var hit = null;
+    s.counters.forEach(function (c) {
+      if (hit || !c.unlocked || c === except) return;
+      if (servableGuests(s, c, item).some(function (o) { return o.subst === null; })) hit = c.id;
+    });
+    return hit;
+  }
+  E.whereExact = whereExact;
   // ほかの鉄板で、これを出せるお客様（同じ種類を優先）
   function whereServable(s, item, except) {
     var best = null;
@@ -776,8 +800,11 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     if (food.k === 'steak') {
       gu.got.main = true; s.stats.mains++;
       gu.servedMain = food.m; gu.subst = o.subst; gu.servedDone = cl;
-      var wrong = gu.order.done !== cl || o.subst === 'down';
+      // 取り違えは2種類に分けて数える（監査 F03）：焼き加減ちがい（wrongDone）と、下の肉・別の部位を出した（wrongPart）。wrong はその合計
+      var wDone = gu.order.done !== cl, wPart = o.subst === 'down', wrong = wDone || wPart;
       if (wrong) { gu.wrong = true; s.stats.wrong++; }
+      if (wDone) s.stats.wrongDone = (s.stats.wrongDone || 0) + 1;
+      if (wPart) s.stats.wrongPart = (s.stats.wrongPart || 0) + 1;
       if (o.subst) s.stats.mixups = (s.stats.mixups || 0) + 1;
       if (o.subst === 'up') {
         var diff = D.money.cost[food.m] - D.money.cost[gu.order.main];
@@ -840,7 +867,19 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
         var cl = classify(slot);
         if (cl === 'raw') return toast(s, 'まだ生です', 'info');
         if (cl === 'burnt') return toast(s, '焦げています。ゴミ箱へ', 'warn');
-        var pick = pickGuest(servableGuests(s, c, slot), slot, i);
+        // 出す相手の順番（監査 F01 2026-10-28）：①ここに同じ肉を頼んだ人 → 出す ②ほかの鉄板に同じ肉を頼んだ人 → 皿に盛って運ぶ
+        //  ③どこにもいない → ここで代わりに出す（サービス／取り違え）。①より先に代わりを出すと、運ぶつもりの肉が取り違えになった
+        var here = servableGuests(s, c, slot);
+        var pick = pickGuest(here.filter(function (o) { return o.subst === null; }), slot, i);
+        if (pick) { c.slots[i] = null; usePlate(p); serveTo(s, c, pick, slot, px); return; }
+        var far = whereExact(s, slot, c);
+        if (far) {
+          p.hold = { k: 'dish', food: slot, n: h.n };
+          c.slots[i] = null;
+          fx(s, { t: 'pick', x: px, y: py });
+          return toast(s, foodName(slot) + 'をお皿に盛りました。鉄板' + far + 'のお客様へ運びましょう', 'info');
+        }
+        pick = pickGuest(here, slot, i);
         if (pick) { c.slots[i] = null; usePlate(p); serveTo(s, c, pick, slot, px); return; }
         var where = whereServable(s, slot, c);
         if (where) {
@@ -856,7 +895,10 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
     }
     // 料理をのせた皿を出す（出せなければ、空いた鉄板に戻せる）
     if (h && h.k === 'dish') {
-      var dp = pickGuest(servableGuests(s, c, h.food), h.food, i);
+      // 同じ肉を頼んだ人がここにいなくて、ほかの鉄板にいるなら、ここでは代わりに出さない（運ぶ途中で取り違えにしない）
+      var dl = servableGuests(s, c, h.food), dExact = dl.filter(function (o) { return o.subst === null; });
+      var dFar = !dExact.length && whereExact(s, h.food, c);
+      var dp = dFar ? null : pickGuest(dl, h.food, i);
       if (dp) {
         var food = h.food, rest = (h.n || 1) - 1;
         p.hold = rest > 0 ? { k: 'plates', n: rest, dirty: false } : null;
@@ -866,9 +908,9 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       if (!slot && !c.needsScrape) {
         c.slots[i] = h.food; p.hold = { k: 'plates', n: h.n || 1, dirty: false };
         fx(s, { t: 'sizzle', x: px, y: py });
-        return toast(s, '鉄板に戻しました（' + whyNot(s, c, h.food) + '）', 'info');
+        return toast(s, '鉄板に戻しました（' + (dFar ? '鉄板' + dFar + 'のお客様の分です' : whyNot(s, c, h.food)) + '）', 'info');
       }
-      return toast(s, whyNot(s, c, h.food), 'info');
+      return toast(s, dFar ? foodName(h.food) + 'は鉄板' + dFar + 'のお客様の分です' : whyNot(s, c, h.food), 'info');
     }
     // 汚れた皿を回収
     if ((!h || (h.k === 'plates' && h.dirty)) && dirtyTotal > 0) {
@@ -1371,6 +1413,9 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
   function collectLeftovers(s) {
     var take = function (it) {
       if (!it) return;
+      // 焦げは、捨てても鉄板に残したまま閉店しても同じに数える（監査 F04：放置すると数えず、片付けた方が損だった）
+      var burntOf = function (x) { return x && (x.k === 'steak' || x.k === 'rice') && classify(x) === 'burnt' ? (x.n || 1) : 0; };
+      s.stats.burnt += burntOf(it) + (it.k === 'dish' ? burntOf(it.food) : 0);
       if (it.k === 'steak' && it.t === 0) s.stats.cost -= itemCost(it);   // 焼く前の肉はショーケースへ戻す
       else if (it.k === 'steak' || it.k === 'rice') addLoss(s, it);
       else if (it.k === 'dish') addLoss(s, it.food);
@@ -1419,7 +1464,7 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
   function summary(st) {
     return { day: st.day, revenue: st.revenue, cost: st.cost, loss: st.loss, labor: st.labor, fixed: st.fixed, profit: st.profit,
       tips: st.tips, guests: st.guests, groups: st.groups, complaints: st.complaints, lostGroups: st.lostGroups, lostSales: st.lostSales, avgRating: st.avgRating,
-      reviewsGood: st.reviewsGood, reviewsBad: st.reviewsBad, mc: st.mc, mcLast: (st.mcStages || {}).last || 0, photoReviews: st.photoReviews || 0, burnt: st.burnt, wrong: st.wrong, mains: st.mains, mixups: st.mixups || 0,
+      reviewsGood: st.reviewsGood, reviewsBad: st.reviewsBad, mc: st.mc, mcLast: (st.mcStages || {}).last || 0, photoReviews: st.photoReviews || 0, burnt: st.burnt, wrong: st.wrong, wrongDone: st.wrongDone || 0, wrongPart: st.wrongPart || 0, mains: st.mains, mixups: st.mixups || 0,
       plateOutSec: st.plateOutSec, dirtyBlockSec: st.dirtyBlockSec, annivMissed: st.annivMissed, rep: st.repAfter,
       focus: st.bottleneck ? st.bottleneck.id : null };
   }
@@ -1437,8 +1482,8 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
         q: '入口で待ち切れずに帰ったお客様が' + st.lostGroups + '組、約' + yen(st.lostSales) + 'ぶんでした。席が空くのを遅らせたのは、何でしたか？' },
       { id: 'burnt', score: st.burnt * 5, concept: 'ロス',
         q: '焦げた肉が' + st.burnt + '枚、' + yen(st.loss) + 'ぶんのロスでした。焼いている間、あなたはどこにいましたか？' },
-      { id: 'wrong', score: st.wrong * 4, concept: '品質',
-        q: '注文と違う焼き加減で出したのが' + st.wrong + '枚ありました。そのとき急いだ理由は何でしたか？' }
+      // 理由はゲームが決めつけない（監査 F03：部位の取り違えを「焼き加減」と言い、「急いだ理由」を前提にしていた）
+      { id: 'wrong', score: st.wrong * 4, concept: '品質', q: wrongQuestion(st) }
     ].sort(function (a, b) { return b.score - a.score; });
     if (c[0].score >= 6) return c[0];
     if (st.groups && mcRate < 0.5) return { id: 'memory', score: 0, concept: '体験価値',
@@ -1499,6 +1544,15 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       }
     } else if (b.id === 'wrong') {
       var W = L.filter(function (e) { return e.k === 'serve' && e.good === false && !e.subst; });
+      var WP = L.filter(function (e) { return e.k === 'serve' && e.subst === 'down'; });
+      if (!W.length && WP.length) {
+        // 部位（肉の種類）の取り違えだけ：どの肉を、どの注文に出したか
+        var wp = WP[0], pp = most(WP, function (e) { return e.wantMain + '>' + e.have; }), ps = pp.v.split('>');
+        R.steps.push({ t: clock(wp.t), text: E.meatName(wp.wantMain) + 'のご注文に、' + E.meatName(wp.have) + 'を出す' });
+        R.result = '部位の取り違え ' + (st.wrongPart || WP.length) + '枚。いちばん多かったのは「' + E.meatName(ps[0]) + 'のご注文に' + E.meatName(ps[1]) + '」で' + pp.n + '枚でした';
+        R.q = b.q;
+        R.next = '焼く前に「どのお客様の肉か」を確かめる合図を1つ決めるとしたら、何にしますか？';
+      }
       if (W.length) {
         var w = W[0], grill = lastBefore('sizzle', w.x, w.t), pair = most(W, function (e) { return e.want + '>' + e.done; });
         var pw = pair.v.split('>');
@@ -1506,7 +1560,7 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
         R.steps.push({ t: clock(w.t), text: (DN[w.want] || w.want) + 'のご注文に、' + (DN[w.done] || w.done) + 'で出す' + (grill ? '（焼いた時間 ' + sec(w.t - grill.t) + '）' : '') });
         var bt = D.doneness.beef, k = st.heat || 1, lo = { rare: bt.rare, medium: bt.medium, well: bt.well }[w.want], hi = { rare: bt.medium, medium: bt.well, well: bt.wellEnd }[w.want];
         if (grill && lo) R.steps.push({ t: '', text: (DN[w.want] || w.want) + 'になるのは、置いてから約' + Math.round(lo / k) + '〜' + Math.round(hi / k) + '秒。この肉は' + sec(w.t - grill.t) + '（' + (w.t - grill.t > hi / k ? '長かった' : '短かった') + '）' });
-        R.result = '焼き加減ちがい ' + st.wrong + '枚' + vsPrev(st.wrong, 'wrong', '枚') + '。いちばん多かったのは「' + (DN[pw[0]] || pw[0]) + 'のご注文に' + (DN[pw[1]] || pw[1]) + '」で' + pair.n + '枚でした';
+        R.result = '焼き加減ちがい ' + (st.wrongDone != null ? st.wrongDone : st.wrong) + '枚' + (st.wrongPart ? '（ほかに部位の取り違え ' + st.wrongPart + '枚）' : '') + '。いちばん多かったのは「' + (DN[pw[0]] || pw[0]) + 'のご注文に' + (DN[pw[1]] || pw[1]) + '」で' + pair.n + '枚でした';
         R.q = '「' + (DN[pw[0]] || pw[0]) + 'になった」と判断したのは、鉄板の何を見たときですか？';
         R.next = '焼き上がりを確かめる「見るタイミング」を1つ決めるとしたら、いつにしますか？';
       }
@@ -1568,7 +1622,7 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
       R.next = 'その場所に立つと、お客様の何が見えるようになりますか？';
     }
     if (prev && prev.focus === b.id && b.id !== 'delegate') {
-      var chg = { burnt: ['焦げ', prev.burnt, st.burnt, '枚'], wrong: ['焼き加減ちがい', prev.wrong, st.wrong, '枚'], plates: ['皿がなかった時間', Math.round(prev.plateOutSec), Math.round(st.plateOutSec), '秒'],
+      var chg = { burnt: ['焦げ', prev.burnt, st.burnt, '枚'], wrong: ['焼き加減・部位ちがい', prev.wrong, st.wrong, '枚'], plates: ['皿がなかった時間', Math.round(prev.plateOutSec), Math.round(st.plateOutSec), '秒'],
         dirty: ['片付いていない時間', Math.round(prev.dirtyBlockSec), Math.round(st.dirtyBlockSec), '秒'], lost: ['入れずに帰った組', prev.lostGroups, st.lostGroups, '組'], memory: ['思い出づくり', prev.mc, st.mc, '組'] }[b.id];
       if (chg) {
         var better = b.id === 'memory' ? chg[2] > chg[1] : chg[2] < chg[1];

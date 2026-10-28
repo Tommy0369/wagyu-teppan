@@ -13,7 +13,8 @@
   var inputMode = 'key', padPrev = {};   // タッチ端末は下で 'touch' から始める（手がかりの表示を「つかむ」「作業」に）
 
   // ---------- 保存（使えない環境でも遊べる） ----------
-  function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* 保存できなくても続ける */ } }
+  // 保存できたかを返す（監査 F02：失敗を隠して「保存済み」と出していた）
+  function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
   function load(k) { try { var t = localStorage.getItem(k); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
   var reducedMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   var coarse = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
@@ -32,9 +33,19 @@
   });
   var drawNow = true, workEma = 0, halfRate = false, frameNo = 0, skipDt = 0;
 
+  // saveOk：いまの開店前の状態を保存できたか（null＝まだ保存していない）。できなければ一度だけ知らせる
+  var saveOk = null, saveWarned = false;
   function save() {
     if (!s || !s.morning) return;
-    store(SAVE_KEY, { v: D.saveVersion, day: s.day, morning: s.morning });
+    var rec = { v: D.saveVersion, day: s.day, morning: s.morning };
+    saveOk = store(SAVE_KEY, rec);
+    // 空きがないときは、前のセーブを消してから1回だけ書き直す（前のセーブが残って、古い日に戻るのを防ぐ）
+    if (!saveOk && store(SAVE_KEY, null)) saveOk = store(SAVE_KEY, rec);
+    if (!saveOk) {
+      var old = load(SAVE_KEY), stale = old && old.morning !== s.morning ? old.day : 0;
+      if (!saveWarned) U.toast('保存できませんでした（ブラウザの設定で保存が止められているか、空きがありません）。' + (stale ? '前に保存した' + stale + '日目のデータが残っています。' : '') + 'タイトルに戻ると、この続きからは遊べません', 'bad');
+      saveWarned = true;
+    }
   }
   function savedRun() {
     var sv = load(SAVE_KEY);
@@ -49,14 +60,15 @@
     startGame: function (difficulty) {
       A.init(); lockLandscape();
       s = E.newRun((Date.now() ^ 0x5bd1e995) >>> 0, difficulty);
-      warned = {};
+      warned = {}; saveWarned = false;
       enterPrep();
     },
     continueGame: function () {
       A.init(); lockLandscape();
       var sv = savedRun();
       var r = sv && E.restore(sv.morning);
-      if (!r) { U.toast('保存データを読めませんでした。はじめから始めます', 'warn'); return act.newGame(); }
+      // 難易度の画面を開いてから知らせる（先に出すと、画面の入れ替えで消えた）
+      if (!r) { store(SAVE_KEY, null); act.newGame(); U.toast('保存データが壊れていて読めませんでした。はじめから始めます', 'warn'); return; }
       s = r; warned = {};
       enterPrep();
     },
@@ -97,6 +109,7 @@
       if (installEvt) { var e = installEvt; installEvt = null; e.prompt(); if (e.userChoice) e.userChoice.then(function () { act.toTitle(); }); return; }
       U.installIOS(function () { act.toTitle(); });
     },
+    saveStatus: function () { return saveOk; },
     getSettings: function () { return { sound: settings.sound, hints: settings.hints === null ? true : settings.hints, reduced: settings.reduced, touch: settings.touch, lite: settings.lite }; },
     setSetting: function (id, v) {
       settings[id] = v; store(SET_KEY, settings);
