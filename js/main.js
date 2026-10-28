@@ -160,6 +160,8 @@
   window.addEventListener('keyup', function (e) { onKey(e, false); });
   window.addEventListener('blur', releaseAll);
   document.addEventListener('visibilitychange', function () { if (document.hidden) act.pause(); });
+  // アプリ：裏に回る直前に入れ物が知らせる（visibilitychange が遅れて届くことがあったため）
+  window.addEventListener('wagyuapp:pause', function () { act.pause(); });
 
   function setupTouch() {
     var stick = document.getElementById('stick'), knob = document.getElementById('stickKnob');
@@ -426,6 +428,7 @@
 
   // スマホを縦に持っているときは、画面ごと90度回して横画面で遊ぶ
   function applyRotate() {
+    if (inApp) { document.documentElement.classList.toggle('phone', isPhone()); return; }   // アプリは横向きに固定（回さない）
     var w = window.innerWidth, h = window.innerHeight;
     var rot = coarse && h > w && w < 700;
     var root = document.documentElement;
@@ -435,7 +438,7 @@
   }
   // Android など、固定できる端末は全画面＋横向きに固定する（できなくても遊べる）
   function lockLandscape() {
-    if (!coarse) return;
+    if (!coarse || inApp) return;   // アプリは入れ物が横向き・全画面にしている
     try {
       var el = document.documentElement;
       var p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : null;

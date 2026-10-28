@@ -423,6 +423,7 @@ html.phone .title-hero .kicker { font-size: var(--fs-md); }
 html.phone .title-hero h1 { font-size: 34px; margin: 0 0 var(--s-2); }
 html.phone .title-hero p { font-size: var(--fs-sm); margin-bottom: var(--s-3); }
 html.phone .title-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-2); max-width: 520px; margin-top: var(--s-3); }
+html.phone .title-actions [data-a="continue"] { grid-column: 1 / -1; }   /* 「続きから（◯日目の開店前）」は1行で */
 html.phone .title-meta { margin-top: var(--s-2); }
 
 @media (prefers-reduced-motion: reduce) {

@@ -2,7 +2,7 @@
  * 一度開いたら、ゲームのファイルを端末にしまう → 2回目からはすぐ開き、電波がなくても遊べる。
  * VERSION は tools/pwa-version.mjs が、ファイルの中身から自動で書き換える（変えると、次に開いたときに新しい版へ入れ替わる）
  */
-var VERSION = 'bdcb3216f7';
+var VERSION = 'acb0a8e4b1';
 var CACHE = 'wk-teppan-' + VERSION;
 var FILES = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'js/data.js', 'js/engine.js', 'js/bot.js', 'js/sprites.js', 'js/art-images.js', 'js/art-chars.js', 'js/render.js', 'js/audio.js', 'js/ui.js', 'js/main.js'];

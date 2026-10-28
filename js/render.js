@@ -36,7 +36,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     v.canvas.width = Math.round(cssW * v.dpr); v.canvas.height = Math.round(cssH * v.dpr);
     v.canvas.style.width = cssW + 'px'; v.canvas.style.height = cssH + 'px';
     // 上の壁は2段見せる。スマホは1段にして、そのぶん店を大きく（高さいっぱい・左右の余白に操作と情報を置く）
-    var wall = R.pixel ? (v.phone ? 1 : 2) : 0;
+    var wall = R.pixel ? 2 : 0;   // 上の壁は2段（スマホも：注文の札が隣と互い違いに2〜3段積まれても、上で切れないように）
     var rowsH = E.MH + wall;
     var fitH = cssH / (rowsH + (v.phone ? 0.1 : 0.2));
     var T = Math.floor(Math.min(cssW / E.MW, fitH));
@@ -561,7 +561,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     if (!parts.length) { chip(v, x, y, '✓', 'rgba(124,196,138,.9)', C.ink); return; }
     var fs = fz(v, 0.22, 11);
     parts.forEach(function (p, i) {
-      var yy = y - i * fs * 1.55;
+      var yy = y - i * fs * rowK(v);
       if (!p.row) { chip(v, x, yy, p.t, p.bg, p.fg, p.border); return; }
       // 小さい札を横に並べる（前菜の残り・ドリンク・ご飯）
       var ctx = v.ctx, mfs = fz(v, 0.18, 9); ctx.font = '700 ' + mfs + 'px ' + FONT;
@@ -1318,15 +1318,21 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       var stagger = T < 52, fsB = fz(v, 0.22, 11), topB = py(v, 0.86);
       var X0 = c.x0 + (g.off || 0);   // 相席なら、組の先頭の席から
       if (g.state === 'waiting') g.guests.forEach(function (gu, i) {
-        // 狭い画面では1席おきに上へずらす。ずらす幅は、左隣の札の段数ぶん（2段の札でも重ならない）
+        // 狭い画面では1席おきに上へずらす。ずらす幅は、両隣の札の高いほうの段数ぶん（2〜3段の札でも重ならない。左端の席は右隣を見る）
         var lift = 0;
         if (stagger && (X0 + i) % 2) {
-          var seat = (g.off || 0) + i - 1, ng = seat >= 0 ? E.groupAtSeat(s, c, seat) : null, nb = ng && ng.state === 'waiting' ? ng.guests[seat - (ng.off || 0)] : null;
-          lift = nb ? (bubbleParts(nb).length || 1) * fsB * 1.55 + 2 : fsB * 1.6;
+          var rows = 0;
+          [-1, 1].forEach(function (d) {
+            var seat = (g.off || 0) + i + d, ng = seat >= 0 && seat < c.seats ? E.groupAtSeat(s, c, seat) : null, nb = ng && ng.state === 'waiting' ? ng.guests[seat - (ng.off || 0)] : null;
+            if (nb) rows = Math.max(rows, bubbleParts(nb).length || 1);
+          });
+          lift = rows ? rows * fsB * rowK(v) + 2 : fsB * 1.6;
         }
         var by = py(v, 1.42) - lift, n = bubbleParts(gu).length || 1;
+        var stackTop = by - (n - 1) * fsB * rowK(v) - fsB * 0.73;
+        if (stackTop < v.oy - EXTV(v) + 2) by += v.oy - EXTV(v) + 2 - stackTop;   // 画面の上で切れるなら、下げる（スマホ）
         orderBubble(v, s, gu, px(v, X0 + i) + T / 2, by);
-        topB = Math.min(topB, by - (n - 1) * fsB * 1.55 - fsB * 0.73 - Math.max(6, T * 0.14) / 2 - 3);   // 待ち時間のバーは、いちばん上の札より上に
+        topB = Math.min(topB, by - (n - 1) * fsB * rowK(v) - fsB * 0.73 - Math.max(6, T * 0.14) / 2 - 3);   // 待ち時間のバーは、いちばん上の札より上に
       });
       var gx = px(v, X0) + (g.size * T) / 2;
       if (g.state === 'waiting' || g.state === 'ordering') patienceBar(v, gx, Math.min(py(v, 0.86), topB), g.size * T * 0.9, g.state === 'ordering' ? 1 : g.patience / g.pMax);
@@ -1346,5 +1352,9 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     });
   }
 
+  // 店の絵の上の端（壁が見えている段数ぶん）
+  function EXTV(v) { return v.T * (R.pixel ? 2 : 0); }
+  // 注文の札の段の間隔（スマホは札が大きいぶん少し詰める）
+  function rowK(v) { return v.phone ? 1.42 : 1.55; }
   R.tileToScreen = function (v, x, y) { return { x: px(v, x), y: py(v, y) }; };
 })(WK);

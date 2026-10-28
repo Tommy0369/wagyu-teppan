@@ -9,7 +9,8 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
   var A = WK.Audio = { on: true, ctx: null, master: null, sizzle: null, sizzleGain: null };
 
   A.init = function () {
-    if (A.ctx) { if (A.ctx.state === 'suspended') A.ctx.resume(); return; }
+    // 電話などのあと、iPhone では 'interrupted' になることがある → 動いていなければ起こす
+    if (A.ctx) { if (A.ctx.state !== 'running' && A.ctx.resume) A.ctx.resume().catch(function () {}); return; }
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     A.ctx = new AC();
