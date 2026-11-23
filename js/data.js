@@ -113,13 +113,14 @@ WK.DATA = {
   difficulties: {
     // 部位はどの難易度も同じ（侍コースの3種 → 6日目から将軍コースの2種）。鬼ムズだけ11日目から大将軍コースの皇帝2種（本人指定 2026-10-27）
     // patience：お客様が待ってくれる長さの倍率（席・入口とも）。相席で同時に座る組が増えたので測り直した（2026-10-28、D-034）
-    easy: { name: 'イージー', cook: 0.80, patience: 1.25, desc: '肉がゆっくり焼け、お客様も長く待ってくれる。焼き加減を合わせやすい',
+    // desc：難易度を選ぶ画面の1行（スマホの1画面に4枚並べるので短く。速さ・待てる長さ・部位の数は画面が数字から書く 2026-11-20）
+    easy: { name: 'イージー', cook: 0.80, patience: 1.25, desc: 'はじめての人に。焼き加減を合わせやすい',
       cuts: [[1, ['sirloin', 'bekkaku', 'wasaro']], [6, ['chateau', 'filet']]] },
-    normal: { name: 'ノーマル', cook: 0.95, patience: 1.2, desc: 'ふつうの速さ',
+    normal: { name: 'ノーマル', cook: 0.95, patience: 1.2, desc: '標準。慣れてきたらここから',
       cuts: [[1, ['sirloin', 'bekkaku', 'wasaro']], [6, ['chateau', 'filet']]] },
-    hard: { name: 'ハード', cook: 1.10, patience: 0.95, desc: '肉が速く焼ける（ノーマルより約16%速い）。お客様は少し待てない',
+    hard: { name: 'ハード', cook: 1.10, patience: 0.95, desc: '速さと段取りが試される',
       cuts: [[1, ['sirloin', 'bekkaku', 'wasaro']], [6, ['chateau', 'filet']]] },
-    oni: { name: '鬼ムズ', cook: 1.10, patience: 0.88, desc: 'ハードより待てないお客様。11日目から皇帝ロイン・皇帝ブリアンも入り、7種を焼き分ける',
+    oni: { name: '鬼ムズ', cook: 1.10, patience: 0.88, desc: '11日目から皇帝の2種も入り、7種を焼き分ける',
       cuts: [[1, ['sirloin', 'bekkaku', 'wasaro']], [6, ['chateau', 'filet']], [11, ['kotei_loin', 'kotei_brian']]] }
   },
   difficultyOrder: ['easy', 'normal', 'hard', 'oni'],
@@ -195,7 +196,7 @@ WK.DATA = {
     //  speed：歩く速さの倍率（自分＝1。0.85→0.83 本人指定 2026-10-28「スタッフが何でもやってしまう」）。react：次の判断までの間（秒）。short：頭の上の札
     grill: { name: '焼き担当', short: '焼き', color: '#d0503a', wage: 25000, speed: 0.83, react: 0.25, slot: 'cook', desc: '肉を取って焼き、皿に盛ってお出しする（ご飯も）。手が空いたら鉄板の掃除と洗い物' },
     kitchen: { name: 'キッチン担当', short: 'キッチン', color: '#3f8f5a', wage: 20000, speed: 0.83, react: 0.25, slot: 'cook', desc: '前菜・ドリンク・皿洗い・汚れた皿の回収・鉄板の掃除' },
-    mc: { name: 'MC担当', short: 'MC', color: '#c9a45c', wage: 25000, speed: 0.83, react: 0.3, desc: '最後の肉をお出しした組に、フランベで思い出づくり（記念日の組を先に）' }
+    mc: { name: 'MC担当', short: 'MC', color: '#c9a45c', wage: 30000, speed: 0.83, react: 0.3, desc: '最後の肉をお出しした組に、フランベで思い出づくり（記念日の組を先に）。ほかの時間は、肉を焼いて盛って出す（焼き担当と同じ）' }
   },
   washerSec: 1.6, washerCap: 8,
 
@@ -211,7 +212,7 @@ WK.DATA = {
       { id: 'tray', name: 'お盆', price: 30000, desc: 'ご飯を4つ・ドリンクを6杯まで、まとめて運べる（ないときは、ご飯1つ・ドリンク4杯）', max: 1, w: 2 },
       { id: 'highHeat', name: '高火力鉄板', price: 150000, desc: '焼く速さ×1.33。ちょうどいい時間も短くなる', max: 1, w: 1 },
       { id: 'reservation', name: '予約台帳', price: 90000, desc: '来店の山をならす', max: 1, w: 1.5 },
-      { id: 'counter', name: '鉄板カウンター増設', price: 250000, desc: '4席のカウンターが1つ増え、皿も4枚つく（スタッフを2人以上雇うと並ぶ。ひとりでは回らないため）', max: 1, w: 1.5, staffNeed: 2, plates: 4 },
+      { id: 'counter', name: '鉄板カウンター増設', price: 250000, groupMult: 1.25, desc: '4席のカウンターが1つ増え、皿も4枚つく。席が増えた分、来るお客様も2割5分増える（スタッフを2人以上雇うと並ぶ）', max: 1, w: 1.5, staffNeed: 2, plates: 4 },
       { id: 'showcase', name: '神戸牛ショーケース', price: 60000, desc: '肉を取る場所を増やす', station: 'showcase', max: 2, w: 1 },
       { id: 'board', name: 'まな板', price: 30000, desc: '前菜を作る場所を増やす', station: 'board', max: 3, w: 2 },
       // 次のステップ：3日目の夜から並ぶ投資。買うと、ビールの代わりに日本酒・ワインを頼むお客様が出る

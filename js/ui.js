@@ -20,6 +20,14 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     ['app', 'hud', 'hDay', 'hClock', 'hClockBar', 'hSales', 'hRep', 'hClaim', 'btnPause', 'stage', 'banner', 'bannerTitle', 'bannerSub', 'btnOpen',
       'toasts', 'hint', 'hintNext', 'hintTarget', 'touch', 'modalWrap', 'modal'].forEach(function (id) { el[id] = $(id); });
     el.btnPause.addEventListener('click', function () { act.pause(); });
+    // スマホの拡大：たたんだ数字（売上・評判）を開く／とじる。店の見え方（拡大・全体）を切り替える
+    var more = $('btnHudMore'), zb = $('btnZoom');
+    if (more) more.addEventListener('click', function () {
+      var on = !document.documentElement.classList.contains('hudOpen');
+      document.documentElement.classList.toggle('hudOpen', on);
+      more.setAttribute('aria-expanded', on ? 'true' : 'false'); more.textContent = on ? 'とじる' : '詳しく';
+    });
+    if (zb) zb.addEventListener('click', function () { act.toggleZoom(); });
     el.btnOpen.addEventListener('click', function () { act.open(); });
     el.modal.addEventListener('keydown', trapFocus);
   };
@@ -277,50 +285,117 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
   };
 
   // 難易度（肉の焼けるスピード）を選ぶ
+  // 難易度ごとのちがい（ノーマルとくらべた言葉）。数字は data.js の cook・patience・cuts から作る
+  function diffFacts(id) {
+    var d = D.difficulties[id], n = D.difficulties.normal, r = d.cook / n.cook, q = d.patience / n.patience;
+    var kinds = (d.cuts || []).map(function (c, i, a) { return a.slice(0, i + 1).reduce(function (k, x) { return k + x[1].length; }, 0); });
+    return {
+      cook: r < 0.9 ? 'ゆっくり' : (r <= 1.05 ? 'ふつう' : '速い'),
+      wait: q > 1.1 ? '長い' : (q > 1.02 ? '少し長い' : (q >= 0.98 ? 'ふつう' : (q >= 0.76 ? '短い' : 'とても短い'))),
+      cuts: kinds.length ? kinds.join('→') + '種' : '1種'
+    };
+  }
+  // 難易度を選ぶ：スマホの横でも1画面に収める（4枚を横に並べる）。くわしいルールは「遊び方・ルール」の画面へ（本人指定 2026-11-20）
   U.difficulty = function (pick, back) {
-    var html = '<h2 id="modalTitle">難易度を選ぶ</h2><p class="lead">肉の焼けるスピードが変わります。ハードと鬼ムズは、お肉が部位ごとに分かれます。あとから変えるときは、はじめからやり直します。</p><div class="cards diff-cards">';
+    var html = '<h2 id="modalTitle">難易度を選ぶ</h2><p class="lead">ちがうのは、肉の焼ける速さと、お客様が待ってくれる長さ。</p><div class="cards diff-cards">';
     D.difficultyOrder.forEach(function (id) {
-      var d = D.difficulties[id];
-      html += '<button class="card" type="button" data-diff="' + id + '"><span class="name">' + d.name + '</span><span class="desc">' + esc(d.desc) + '</span></button>';
+      var d = D.difficulties[id], f = diffFacts(id);
+      html += '<button class="card" type="button" data-diff="' + id + '"><span class="name">' + d.name + '</span><span class="desc">' + esc(d.desc) + '</span>' +
+        '<span class="dfacts"><span>焼ける</span><b>' + f.cook + '</b><span>待てる</span><b>' + f.wait + '</b><span>部位</span><b>' + f.cuts + '</b></span></button>';
     });
-    html += '</div><div class="actions"><button class="btn ghost" data-a="back" type="button">戻る</button></div>';
+    html += '</div><div class="actions"><span class="note act-note">あとから変えるときは、はじめからやり直します</span><button class="btn ghost" data-a="rules" type="button">遊び方・ルールを見る</button><button class="btn ghost" data-a="back" type="button">戻る</button></div>';
     open(html, '[data-diff="normal"]');
     onAll('[data-diff]', function (b) { pick(b.getAttribute('data-diff')); });
+    on('[data-a="rules"]', function () { U.howto(function () { U.difficulty(pick, back); }, { diff: true }); });
     on('[data-a="back"]', back);
   };
+  // 難易度のちがいの表（遊び方の画面の先頭。難易度を選ぶ画面から来たとき）
+  function diffTable() {
+    var h = '<div class="dtable" role="table" aria-label="難易度のちがい"><div class="dt-row dt-head" role="row"><span role="columnheader"></span>';
+    D.difficultyOrder.forEach(function (id) { h += '<span role="columnheader">' + D.difficulties[id].name + '</span>'; });
+    h += '</div>';
+    [['肉の焼ける速さ', 'cook'], ['お客様が待ってくれる長さ', 'wait'], ['部位の数', 'cuts']].forEach(function (row) {
+      h += '<div class="dt-row" role="row"><span role="rowheader">' + row[0] + '</span>';
+      D.difficultyOrder.forEach(function (id) { h += '<span role="cell">' + diffFacts(id)[row[1]] + '</span>'; });
+      h += '</div>';
+    });
+    return h + '</div><p class="note">部位の数は、初日 → 6日目から → 11日目から（鬼ムズだけ）の順。焼ける速さと待ってくれる長さは、ノーマルとくらべた言葉です。</p>';
+  }
 
-  U.howto = function (back) {
+  // 遊び方：項目の名前だけを並べ、押すとその説明が開く（本人指定 2026-11-20「目次形式に。押すと言葉が出るトグルに」）
+  // 1項目＝1つのトグル（本人指定 同日「それぞれ1個ずつ。コースはコース、1. 肉を取るは取る」）。カテゴリーでまとめない
+  // 開くのは1つだけ。説明は押した項目の行のすぐ下に横いっぱいで出し、ほかの項目の並びは動かさない
+  // 難易度を選ぶ画面から来たときは「難易度のちがい」を先頭に足す
+  var HOWTO = [
+    ['course', 'コース', 'お客様はコースを頼みます。侍コース＝サーロイン・別格・和サーロ、将軍コース（6日目から）＝シャトー・フィレ、大将軍コース＝エンペラー（カード）・皇帝ロイン・皇帝ブリアン（鬼ムズ11日目）。注文の札の上の色と文字が部位です。'],
+    ['take', '1. 肉を取る', '部位のショーケースで「つかむ」と、切り分けた肉が1枚。続けて押すと4枚まで重ねて持てます。戻すときは作業（長押し）。'],
+    ['grill', '2. 鉄板で焼く', 'お客様の前の鉄板に置きます。リングの太いところが、注文の焼き加減です。'],
+    ['serve', '3. 盛って出す', '皿を持って焼けた肉の前で「つかむ」。盛り付けて、そのままお出しします。ほかの鉄板のお客様の分なら、皿に盛って運べます。'],
+    ['clear', '4. 片付ける', '帰ったお客様の皿を回収して洗い場へ。カウンターの全員が帰ったら、鉄板を掃除します（作業・長押し）。'],
+    ['starter', '前菜', 'まな板にきれいな皿を並べ（4皿まで）、作業（長押し）でまとめて盛ります。重ねて持って1皿ずつお出しします。侍は1品、将軍・大将軍は2品。食べ終えた前菜の皿は、席に下がります。'],
+    ['drink', 'ドリンク', 'ひとり1杯。水・ビールのサーバーで「つかむ」（4杯まで重ねて持てる）。水は無料、ビールは安い。夜の店で酒棚・ワインセラーを買うと、日本酒・ワインを頼むお客様が出て、売上が大きく上がります。'],
+    ['rice', 'ガーリックライス', '焼き上がったら、手ぶらで「つかむ」とその場でお出しします。手に持っても、頼んだお客様の前でお出しできます。'],
+    ['plate', '皿の扱い', '皿棚で「つかむ」を押すたびに1枚ずつ取れます（6枚まで重ねて持てる）。1皿出すごとに1枚減ります。戻すときは「作業（長押し）」。'],
+    ['cuts', '部位の見分け方', 'お肉は初日からサーロイン・別格・和サーロに分かれ、6日目からシャトー・フィレ、鬼ムズは11日目から皇帝ロイン・皇帝ブリアンも。部位ごとのショーケースから取ります。注文の札の上の色と名前で見分けます。ショーケース・鉄板の肉・手に持った肉にも、同じ色と名前の札が付きます。部位ちがいは取り違え（★−1）。シャトー・フィレ・皇帝ブリアンは厚いので、焼けるのが少し遅い。'],
+    ['mix', '取り違え', 'エンペラーをふつうのお客様に出すと「サービス」（差額はロス）。ふつうの肉をエンペラーのお客様に出すと★が下がります。ハラルのお客様にはハラル牛だけ。'],
+    ['seat', '相席と入口', '4人席に空きが並んでいれば、待っている組がその人数ぶん隣に座ります（汚れた皿が残る席には座れません）。座れない人数なら外で待ちます。入口の札が、待っている組の人数です。'],
+    ['claim', 'クレーム', 'クレーム（料理を待ち切れずに帰ったお客様）が1日3件になると、その日は失敗です。開店前からやり直せます。入口で待ち切れずに帰ったお客様はクレームではなく、売上を逃した「機会損失」として日報に出ます。'],
+    ['mc', '思い出づくり', '肉をお出しして、最後の肉をお出ししたら、お客様の前の鉄板で作業（長押し）。フランベの炎が上がり、思い出ができます。「フランベどき」の札が合図です。食事の前に撮ると時間がかかり、★は増えず、チップもわずか（最後の肉の約5分の1）です。最後の肉の思い出は、チップが多く、写真つきの口コミになりやすい（評判に2回ぶん効く）。★5は思い出づくりをした組だけ。記念日のお客様には必須です。'],
+    ['tip', 'チップ', '★4以上の組からいただけます。組の前（鉄板の内側）に立って焼いたり話したりした時間が長いほど、もらいやすく額も増えます。スタッフが前にいた時間は半分に数えます。'],
+    ['night', '夜の店づくり', '利益で設備を買い、4日目からはスタッフも雇えます（焼き担当かキッチン担当のどちらか1人と、MC担当）。MC担当はフランベを先にして、ほかの時間は肉を焼いて出します。3日ごとに「お店の変化カード」を選びます。']
+  ];
+  var KEYS_HTML = '<dl class="keys">' +
+    '<dt>移動</dt><dd>矢印キー／画面のスティック／ゲームパッド</dd>' +
+    '<dt>つかむ・置く・出す</dt><dd>Z ／ 画面の「つかむ」／ ゲームパッドの A</dd>' +
+    '<dt>作業（長押し）</dt><dd>A ／ 画面の「作業」／ ゲームパッドの X</dd>' +
+    '<dt>開店</dt><dd>Enter ／ 「開店する」</dd>' +
+    '<dt>一時停止</dt><dd>Esc ／ 右上の Ⅱ</dd>' +
+    '</dl>';
+  U.howto = function (back, opt) {
+    opt = opt || {};
+    var items = (opt.diff ? [['diff', '難易度のちがい', diffTable()]] : [])
+      .concat(HOWTO.map(function (it) { return [it[0], it[1], '<p>' + it[2] + '</p>']; }))
+      .concat([['keys', '操作', KEYS_HTML]]);
     open(
-      '<h2 id="modalTitle">遊び方</h2>' +
-      '<p class="lead">ボタンは2つだけ。「つかむ」と「作業（長押し）」です。</p>' +
-      '<ol class="howto">' +
-      '<li><b>コース</b><span>お客様はコースを頼みます。侍コース＝サーロイン・別格・和サーロ、将軍コース（6日目から）＝シャトー・フィレ、大将軍コース＝エンペラー（カード）・皇帝ロイン・皇帝ブリアン（鬼ムズ11日目）。注文の札の上の色と文字が部位です。</span></li>' +
-      '<li><b>1. 肉を取る</b><span>部位のショーケースで「つかむ」と、切り分けた肉が1枚。続けて押すと4枚まで重ねて持てます。戻すときは作業（長押し）。</span></li>' +
-      '<li><b>前菜</b><span>まな板にきれいな皿を並べ（4皿まで）、作業（長押し）でまとめて盛ります。重ねて持って1皿ずつお出しします。侍は1品、将軍・大将軍は2品。食べ終えた前菜の皿は、席に下がります。</span></li>' +
-      '<li><b>ドリンク</b><span>ひとり1杯。水・ビールのサーバーで「つかむ」（4杯まで重ねて持てる）。水は無料、ビールは安い。夜の店で酒棚・ワインセラーを買うと、日本酒・ワインを頼むお客様が出て、売上が大きく上がります。</span></li>' +
-      '<li><b>2. 鉄板で焼く</b><span>お客様の前の鉄板に置きます。リングの太いところが、注文の焼き加減です。</span></li>' +
-      '<li><b>3. 皿を持って鉄板へ</b><span>皿を持って焼けた肉の前で「つかむ」。盛り付けて、そのままお出しします。ほかの鉄板のお客様の分なら、皿に盛って運べます。</span></li>' +
-      '<li><b>皿の扱い</b><span>皿棚で「つかむ」を押すたびに1枚ずつ取れます（6枚まで重ねて持てる）。1皿出すごとに1枚減ります。戻すときは「作業（長押し）」。</span></li>' +
-      '<li><b>取り違え</b><span>エンペラーをふつうのお客様に出すと「サービス」（差額はロス）。ふつうの肉をエンペラーのお客様に出すと★が下がります。ハラルのお客様にはハラル牛だけ。</span></li>' +
-      '<li><b>部位（どの難易度も）</b><span>お肉は初日からサーロイン・別格・和サーロに分かれ、6日目からシャトー・フィレ、鬼ムズは11日目から皇帝ロイン・皇帝ブリアンも。部位ごとのショーケースから取ります。注文の札の上の色と、肉に刺した旗の色で見分けます。部位ちがいは取り違え（★−1）。シャトー・フィレ・皇帝ブリアンは厚いので、焼けるのが少し遅い。</span></li>' +
-      '<li><b>4. 片付ける</b><span>帰ったお客様の皿を回収して洗い場へ。カウンターの全員が帰ったら、鉄板を掃除します（作業・長押し）。</span></li>' +
-      '<li><b>相席と入口</b><span>4人席に空きが並んでいれば、待っている組がその人数ぶん隣に座ります（汚れた皿が残る席には座れません）。座れない人数なら外で待ちます。入口の札が、待っている組の人数です。</span></li>' +
-      '<li><b>ガーリックライス</b><span>焼き上がったら、手ぶらで「つかむ」とその場でお出しします。手に持っても、頼んだお客様の前でお出しできます。</span></li>' +
-      '<li><b>思い出づくり（フランベ）</b><span>肉をお出しして、最後の肉をお出ししたら、お客様の前の鉄板で作業（長押し）。フランベの炎が上がり、思い出ができます。「フランベどき」の札が合図です。食事の前に撮ると時間がかかり、★は増えず、チップもわずか（最後の肉の約5分の1）です。最後の肉の思い出は、チップが多く、写真つきの口コミになりやすい（評判に2回ぶん効く）。★5は思い出づくりをした組だけ。記念日のお客様には必須です。</span></li>' +
-      '<li><b>チップ</b><span>★4以上の組からいただけます。組の前（鉄板の内側）に立って焼いたり話したりした時間が長いほど、もらいやすく額も増えます。スタッフが前にいた時間は半分に数えます。</span></li>' +
-      '<li><b>夜</b><span>利益で設備を買い、4日目からはスタッフも雇えます（焼き担当かキッチン担当のどちらか1人と、MC担当）。3日ごとに「お店の変化カード」を選びます。</span></li>' +
-      '</ol>' +
-      '<h3>操作</h3>' +
-      '<dl class="keys">' +
-      '<dt>移動</dt><dd>矢印キー／画面のスティック／ゲームパッド</dd>' +
-      '<dt>つかむ・置く・出す</dt><dd>Z ／ 画面の「つかむ」／ ゲームパッドの A</dd>' +
-      '<dt>作業（長押し）</dt><dd>A ／ 画面の「作業」／ ゲームパッドの X</dd>' +
-      '<dt>開店</dt><dd>Enter ／ 「開店する」</dd>' +
-      '<dt>一時停止</dt><dd>Esc ／ 右上の Ⅱ</dd>' +
-      '</dl>' +
-      '<p class="note" style="margin-top:16px">クレーム（料理を待ち切れずに帰ったお客様）が1日3件になると、その日は失敗です。開店前からやり直せます。入口で待ち切れずに帰ったお客様はクレームではなく、売上を逃した「機会損失」として日報に出ます。</p>' +
-      '<div class="actions"><button class="btn primary" data-a="back" type="button">戻る</button></div>'
+      '<div class="mhead"><h2 id="modalTitle">' + (opt.diff ? '遊び方・ルール' : '遊び方') + '</h2>' +
+      '<button class="btn primary" data-a="back" type="button">' + (opt.diff ? '難易度を選ぶに戻る' : '戻る') + '</button></div>' +
+      '<p class="lead">ボタンは「つかむ」と「作業（長押し）」の2つ。項目を押すと説明が開きます。</p>' +
+      '<div class="hgrid">' + items.map(function (it) {
+        return '<button class="hitem" type="button" id="hi-' + it[0] + '" data-sec="' + it[0] + '" aria-expanded="false" aria-controls="hpanel">' + it[1] + '</button>';
+      }).join('') + '<div class="hpanel" id="hpanel" role="region" hidden></div></div>'
     );
+    var grid = el.modal.querySelector('.hgrid'), panel = grid.querySelector('.hpanel'), head = el.modal.querySelector('.mhead');
+    var btns = [].slice.call(grid.querySelectorAll('.hitem')), cur = -1, lastW = 0;
+    // 説明を、押した項目と同じ行の最後の項目のうしろに入れる（列の数は画面の幅で変わるので、毎回はかる）
+    function place() {
+      if (cur < 0) return;
+      panel.hidden = true;
+      var b = btns[cur], last = b;
+      btns.forEach(function (o) { if (Math.abs(o.offsetTop - b.offsetTop) < 2) last = o; });
+      grid.insertBefore(panel, last.nextSibling);
+      panel.hidden = false;
+      panel.style.setProperty('--ax', Math.round(b.offsetLeft + b.offsetWidth / 2) + 'px');
+      lastW = grid.clientWidth;
+    }
+    // 開いた説明の下が切れていたら送る。ただし押した項目は見出しの下に残す
+    function reveal(b) {
+      var m = el.modal, mr = m.getBoundingClientRect(), pr = panel.getBoundingClientRect(), br = b.getBoundingClientRect();
+      var down = pr.bottom + 12 - mr.bottom, room = br.top - (mr.top + head.offsetHeight + 8);
+      if (down > 0 && room > 0) m.scrollTop += Math.min(down, room);
+    }
+    function toggle(i) {
+      if (cur >= 0) btns[cur].setAttribute('aria-expanded', 'false');
+      if (i === cur) { cur = -1; panel.hidden = true; return; }
+      cur = i;
+      btns[i].setAttribute('aria-expanded', 'true');
+      panel.innerHTML = items[i][2];
+      panel.setAttribute('aria-labelledby', btns[i].id);
+      place();
+      reveal(btns[i]);
+    }
+    btns.forEach(function (b, i) { b.addEventListener('click', function () { toggle(i); }); });
+    // 向きを変えた・スクロールバーが出たなどで列の数が変わったら、説明を正しい行へ置き直す
+    if (window.ResizeObserver) new ResizeObserver(function () { if (cur >= 0 && grid.clientWidth !== lastW) place(); }).observe(grid);
     on('[data-a="back"]', back);
   };
 

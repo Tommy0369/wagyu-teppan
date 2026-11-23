@@ -231,6 +231,10 @@ if (typeof module !== 'undefined' && !WK.DATA) WK = require('./data.js');
   E.groupCount = function (s) {
     var n = (D.demand.baseGroups + D.demand.perDay * (s.day - 1)) * E.repMult(s.rep);
     s.cards.forEach(function (id) { var c = cardDef(id); if (c && c.groupMult) n *= c.groupMult; });
+    // 増設カウンター：席が増えた分、来るお客様も増える（席だけ増えても、遠いカウンターへ歩く手間が増えるだけになるため）
+    var extra = s.counters.some(function (c) { return c.unlocked && !D.counters.some(function (d) { return d.id === c.id && d.unlocked; }); });
+    var ci = extra && shopItem('counter');
+    if (ci && ci.groupMult) n *= ci.groupMult;
     return Math.max(1, Math.round(n));
   };
   // ハード・鬼ムズ：その日に出る部位（なければ []＝神戸牛だけ）

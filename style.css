@@ -77,7 +77,8 @@ kbd { font-family: var(--f-ui); font-size: var(--fs-xs); padding: 1px 6px; borde
 }
 .iconbtn:hover { background: #2d3243; }
 .iconbtn:active { transform: scale(.97); }
-#app[data-phase="title"] #hud .stat, #app[data-phase="title"] #btnPause { visibility: hidden; }
+#app[data-phase="title"] #hud .stat, #app[data-phase="title"] #btnPause, #app[data-phase="title"] #btnZoom, #app[data-phase="title"] #btnHudMore { visibility: hidden; }
+#btnHudMore, #btnZoom { display: none; }   /* スマホだけ（下の html.phone） */
 
 /* ---------- 舞台 ---------- */
 #stage { position: relative; overflow: hidden; background: #0c0e13; }
@@ -186,6 +187,37 @@ kbd { font-family: var(--f-ui); font-size: var(--fs-xs); padding: 1px 6px; borde
 .howto li { background: var(--c-raised); border-radius: var(--r-md); padding: var(--s-4); box-shadow: var(--edge); }
 .howto b { display: block; margin-bottom: var(--s-1); }
 .howto span { color: var(--c-muted); font-size: var(--fs-sm); }
+/* 遊び方：1項目＝1つのトグル。説明は押した項目の行のすぐ下に横いっぱいで出す（開くのは1つだけ） */
+.mhead {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+  margin: 0 0 var(--s-1); padding: var(--s-1) 0; background: var(--c-surface);
+  box-shadow: 0 -40px 0 0 var(--c-surface);   /* 上の余白も隠す（送った項目が見出しの上からのぞかないように） */
+}
+#modal .mhead h2 { margin: 0; }
+.mhead .btn { flex: none; }
+.hgrid { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--s-2); margin-top: var(--s-3); }
+.hitem {
+  display: flex; align-items: center; gap: var(--s-2); min-width: 0; min-height: 48px; padding: 0 var(--s-3);
+  border: 0; border-radius: var(--r-md); background: var(--c-raised); box-shadow: var(--edge); color: var(--c-text);
+  font: 700 var(--fs-sm)/1.3 var(--f-ui); text-align: left; cursor: pointer; transition: background-color var(--t-ui) var(--ease-out);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.hitem::after { content: "＋"; margin-left: auto; flex: none; color: var(--c-gold); }   /* 開く／とじるは記号と枠で（色だけに頼らない） */
+.hitem:hover { background: #2d3243; }
+.hitem:focus-visible { outline: 2px solid var(--c-gold); outline-offset: 2px; }
+.hitem[aria-expanded="true"] { background: #363c50; box-shadow: inset 0 0 0 2px var(--c-gold); }
+.hitem[aria-expanded="true"]::after { content: "−"; }
+.hpanel {
+  position: relative; grid-column: 1 / -1; padding: var(--s-3) var(--s-4); border-radius: var(--r-md);
+  background: #363c50; box-shadow: var(--edge);
+}
+.hpanel::before {   /* どの項目の説明かを、上向きの三角で指す */
+  content: ""; position: absolute; top: -7px; left: calc(var(--ax, 24px) - 7px);
+  border: 7px solid transparent; border-top: 0; border-bottom-color: #363c50;
+}
+#modal .hpanel p { margin: 0; font-size: var(--fs-sm); line-height: 1.75; }
+.hpanel .dtable { margin: 0 0 var(--s-2); }
+#modal .hpanel .note { margin: 0; }
 /* アプリとして入れる手順（iPhone） */
 .steps { margin: var(--s-3) 0 var(--s-4); padding-left: 1.4em; display: grid; gap: var(--s-2); line-height: 1.7; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2) var(--s-4); font-size: var(--fs-sm); margin: 0; }
@@ -240,6 +272,20 @@ kbd { font-family: var(--f-ui); font-size: var(--fs-xs); padding: 1px 6px; borde
 .card .name { font-family: var(--f-brand); font-size: var(--fs-xl); line-height: 1.3; }
 .card .good, .card .hard, .card .desc { font-size: var(--fs-sm); line-height: 1.6; }
 .card .desc { color: var(--c-muted); }
+/* 難易度のカード：速さ・待てる長さ・部位の数（ラベルと値の2列） */
+.dfacts { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s-2); font-size: var(--fs-sm); line-height: 1.5; }
+.dfacts span { color: var(--c-muted); }
+.dfacts b { font-weight: 700; color: var(--c-text); }
+/* 難易度のちがいの表（遊び方・ルール） */
+.dtable { display: grid; gap: 2px; font-size: var(--fs-sm); margin-bottom: var(--s-3); }
+.dt-row { display: grid; grid-template-columns: minmax(8em, 1.4fr) repeat(4, minmax(0, 1fr)); gap: var(--s-2); padding: var(--s-2) var(--s-3); background: var(--c-raised); border-radius: var(--r-sm); align-items: center; }
+.dt-row > span:first-child { color: var(--c-muted); }
+.dt-head { background: transparent; font-weight: 700; padding-bottom: 0; }
+.actions .act-note { margin-right: auto; align-self: center; flex: 1 1 auto; min-width: 0; }   /* ボタンの左の空きに、短い注意（狭いときは注意のほうが折り返す） */
+.actions:has(.act-note) { flex-wrap: nowrap; }
+.actions:has(.act-note) .btn { white-space: nowrap; flex: none; }
+#modal:has(.diff-cards) { width: min(960px, 100%); }   /* 4枚を横に並べるので、ほかの画面より広く */
+.dfacts b { white-space: nowrap; }
 .card .good::before { content: "＋ "; color: var(--c-good); font-weight: 700; }
 .card .hard::before { content: "− "; color: var(--c-bad); font-weight: 700; }
 
@@ -416,6 +462,18 @@ html.phone .banner-text span { display: none; }
 html.phone #modalWrap { padding: calc(env(safe-area-inset-top) + var(--s-2)) calc(env(safe-area-inset-right) + var(--s-3)) var(--s-2) calc(env(safe-area-inset-left) + var(--s-3)); }
 html.phone #modal { padding: var(--s-4) var(--s-5); max-height: 100%; }
 html.phone #modal h2 { font-size: var(--fs-lg); }
+/* 難易度を選ぶ：スマホの横でも1画面に（4枚を横に並べ、余白を詰める） */
+html.phone .cards.diff-cards { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: var(--s-2); margin-top: var(--s-3); }
+html.phone .diff-cards .card { padding: var(--s-3); gap: var(--s-2); }
+html.phone .diff-cards .card .name { font-size: var(--fs-lg); }
+html.phone .diff-cards .card .desc, html.phone .dfacts { font-size: var(--fs-xs); line-height: 1.5; }
+html.phone #modal:has(.diff-cards) .lead { font-size: var(--fs-sm); margin-bottom: 0; }
+html.phone #modal:has(.diff-cards) .actions { margin-top: var(--s-3); }
+html.phone #modal:has(.hgrid) { padding: var(--s-3) var(--s-4); }
+html.phone .hgrid { gap: 6px; margin-top: var(--s-2); }
+html.phone .hitem { min-height: 44px; gap: 2px; padding: 0 10px; font-size: var(--fs-xs); }
+html.phone #modal:has(.hgrid) .lead { font-size: var(--fs-sm); margin-bottom: 0; }
+html.phone .dt-row { grid-template-columns: minmax(7em, 1.6fr) repeat(4, minmax(0, 1fr)); padding: var(--s-1) var(--s-2); font-size: var(--fs-xs); }
 /* タイトル：1画面に収める（ボタンは横に並べる）。タイトルでは操作ボタンを出さない */
 html.phone #app[data-phase="title"] #touch, html.phone #app[data-phase="title"] #hint { visibility: hidden; }
 html.phone .title-hero { padding: 0; }
@@ -425,6 +483,66 @@ html.phone .title-hero p { font-size: var(--fs-sm); margin-bottom: var(--s-3); }
 html.phone .title-actions { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-2); max-width: 520px; margin-top: var(--s-3); }
 html.phone .title-actions [data-a="continue"] { grid-column: 1 / -1; }   /* 「続きから（◯日目の開店前）」は1行で */
 html.phone .title-meta { margin-top: var(--s-2); }
+
+/* 店の見え方の切り替え（スマホ）。「全体」のときは一時停止の左 */
+html.phone #btnZoom {
+  display: inline-grid; place-items: center; position: absolute; z-index: var(--z-hud); pointer-events: auto; margin: 0;
+  top: calc(env(safe-area-inset-top) + var(--s-2)); right: calc(env(safe-area-inset-right) + var(--s-3) + 44px + var(--s-2));
+  width: auto; min-width: 48px; padding: 0 var(--s-2); font-size: var(--fs-sm); color: var(--c-text);
+}
+.zoombtn .z-near { display: none; }
+html.phone:not(.zoom) .zoombtn .z-near { display: inline; }
+html.phone:not(.zoom) .zoombtn .z-whole { display: none; }
+
+/* ---------- スマホの「拡大」（2026-11-20 本人「ゲーム画面が小さすぎる。画面全体に。数値は押せば出る形に」） ----------
+   店を約1.5倍にして料理人を縦に追う。数字は左上の帯1本に畳む（日・時刻・クレーム）。売上と評判は「詳しく」で出す。
+   一時停止と見え方の切り替えは、右上の店の外（画面の切り欠きの内側）に縦に置く */
+html.phone.zoom #hud {
+  grid-template-columns: auto auto auto auto 1fr; grid-template-rows: auto auto 1fr; column-gap: 0; row-gap: var(--s-1);
+  justify-items: stretch; align-items: stretch;
+  padding: calc(env(safe-area-inset-top) + var(--s-2)) 0 0 calc(env(safe-area-inset-left) + var(--s-2));
+}
+html.phone.zoom .stat, html.phone.zoom #btnHudMore {
+  grid-row: 1; display: flex; align-items: center; gap: var(--s-1); min-height: 44px;
+  padding: 0 var(--s-2); background: rgba(17, 19, 26, .86); pointer-events: none;
+}
+html.phone.zoom .stat-day { grid-column: 1; padding-left: var(--s-3); border-radius: var(--r-full) 0 0 var(--r-full); }
+html.phone.zoom .stat-clock { grid-column: 2; flex-direction: column; align-items: stretch; justify-content: center; gap: 0; min-width: 0; }
+html.phone.zoom .stat-claim { grid-column: 3; }
+html.phone.zoom .stat .lab, html.phone.zoom .stat-day small { display: none; }
+html.phone.zoom .stat-claim .lab { display: inline; font-size: var(--fs-xs); }
+html.phone.zoom .stat b { font-size: var(--fs-md); }
+html.phone.zoom .clockbar { width: 52px; margin-top: 2px; }
+html.phone.zoom #hClaim { padding-top: 0; gap: 3px; }
+html.phone.zoom #hClaim i { width: 12px; height: 12px; }
+html.phone.zoom #btnHudMore {
+  grid-column: 4; border: 0; border-radius: 0 var(--r-full) var(--r-full) 0; padding: 0 var(--s-3) 0 var(--s-2); pointer-events: auto; cursor: pointer;
+  color: var(--c-gold); font: 700 var(--fs-xs)/1 var(--f-ui);
+}
+html.phone.zoom #btnHudMore:focus-visible { outline: 2px solid var(--c-gold); outline-offset: 2px; }
+html.phone.zoom .stat-sales, html.phone.zoom .stat-rep { display: none; }
+html.phone.zoom.hudOpen .stat-sales, html.phone.zoom.hudOpen .stat-rep {
+  display: grid; grid-row: 2; align-self: start; justify-self: start; min-height: 0; padding: var(--s-1) var(--s-3); border-radius: var(--r-md);
+  background: rgba(17, 19, 26, .95);   /* 下の店の文字が透けて読みにくくならないように */
+}
+html.phone.zoom .stat-sales b { min-width: 0; }
+html.phone.zoom.hudOpen .stat-sales { grid-column: 1 / 3; }
+html.phone.zoom.hudOpen .stat-rep { grid-column: 3 / 5; margin-left: var(--s-1); }
+html.phone.zoom.hudOpen .stat-sales .lab, html.phone.zoom.hudOpen .stat-rep .lab { display: block; }
+html.phone.zoom #btnPause, html.phone.zoom #btnZoom {
+  position: absolute; grid-column: auto; grid-row: auto; margin: 0; width: 44px; min-width: 0; height: 44px; padding: 0; justify-self: auto;
+  right: max(var(--s-1), calc(env(safe-area-inset-right) + var(--s-1)));
+}
+html.phone.zoom #btnPause { top: calc(env(safe-area-inset-top) + var(--s-2)); }
+html.phone.zoom #btnZoom { top: calc(env(safe-area-inset-top) + var(--s-2) + 44px + var(--s-2)); font-size: var(--fs-xs); }
+html.phone.zoom #banner { top: calc(env(safe-area-inset-top) + var(--s-2) + 44px + var(--s-2)); }   /* 数字の帯の下 */
+html.phone.zoom #stick { background: rgba(17, 19, 26, .32); }   /* 店の上に重なるので、下が透けて見えるように */
+/* スティックとボタンは画面の下の角へ寄せる（切り欠きは横の真ん中だけ。角の設備を隠しにくい） */
+html.phone.zoom #touch {
+  padding: 0 max(var(--s-2), calc(env(safe-area-inset-right) - 30px)) calc(env(safe-area-inset-bottom) + var(--s-2)) max(var(--s-2), calc(env(safe-area-inset-left) - 30px));
+}
+/* 手がかりは下の壁の上に（いちばん下の段の設備の名前に重ねない）。押せないので、ホームバーの近くでもよい */
+html.phone.zoom #hint { bottom: max(var(--s-1), calc(env(safe-area-inset-bottom) - 14px)); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }

@@ -47,23 +47,45 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       if (v.cam) T = fitH >= 48 ? 48 : (fitH >= 32 ? 32 : Math.floor(fitH));
       else if (T >= 32) T = Math.floor(T / 16) * 16;
     }
+    // スマホの「拡大」（v.zoom）：店を高さ ZOOM_ROWS 段ぶんの大きさにして、料理人を縦に追う。数字と操作は店の上に重ねる
+    // （本人指定 2026-11-20「ゲーム画面が小さすぎる。画面全体に」。横幅は画面の切り欠きの内側まで）
+    v.zoomed = !!(v.phone && v.zoom);
+    if (v.zoomed) T = Math.max(T, Math.floor(Math.min(cssH / ZOOM_ROWS, (cssW - 2 * (v.inset || 0)) / E.MW)));
     // スマホは左右の余白に操作と情報を置くので、余白が足りなければ店を少し小さくする（片側 v.gutMin）
-    if (v.phone && v.gutMin) T = Math.min(T, Math.floor((cssW - 2 * v.gutMin) / E.MW));
+    else if (v.phone && v.gutMin) T = Math.min(T, Math.floor((cssW - 2 * v.gutMin) / E.MW));
     v.T = Math.max(16, T);
     v.ox = Math.floor((cssW - v.T * E.MW) / 2);
     v.oy = Math.floor((cssH - v.T * rowsH) / 2) + wall * v.T;
-    v.camX = null;
+    // 縦に動ける範囲：上の壁が画面の上にそろう ～ 下の壁が画面の下にそろう（店が画面より低ければ動かない）
+    v.oyMax = wall * v.T; v.oyMin = Math.min(v.oyMax, cssH - E.MH * v.T);
+    if (v.zoomed && v.oyMin < v.oyMax) v.oy = v.oyMax;
+    v.camX = null; v.camY = null;
   };
-  R.follow = function (v, x, dt) {
+  R.follow = function (v, x, dt, y) {
+    if (v.zoomed && y != null && v.oyMin < v.oyMax) {
+      // 料理人を画面の真ん中に（注文の札は上に残るので、下の段の設備が隠れないほうを選ぶ）
+      var wy = Math.min(v.oyMax, Math.max(v.oyMin, v.h * 0.5 - y * v.T));
+      v.camY = v.camY == null ? wy : v.camY + (wy - v.camY) * Math.min(1, dt * 5);
+      v.oy = Math.round(v.camY);
+    }
     if (!v.cam) return;
     var want = v.w / 2 - x * v.T;
     want = Math.min(0, Math.max(v.w - E.MW * v.T, want));
     v.camX = v.camX == null ? want : v.camX + (want - v.camX) * Math.min(1, dt * 6);
     v.ox = Math.round(v.camX);
   };
+  var ZOOM_ROWS = 8.8;   // 拡大のとき、画面の高さに入る段数（iPhone 17 Pro 横で1マス約45px＝前の約1.5倍）
+  // 拡大のとき、左上の数字の帯は 下の端 v.stickTop・右の端 v.stickRight（main.js が測る）。注文の札・入口の知らせはその下に出す
   // 画面の外で急ぐことが起きている鉄板・入口を、端に知らせる
   function edgeAlerts(v, s) {
     var T = v.T, items = [];
+    // 拡大で入口（店の上の段）が画面の外：待っている組の数を、数字の帯のすぐ下に出す
+    if (v.zoomed && s.queue.length && py(v, 1.6) < (v.stickTop || 0)) {
+      var low = s.queue.some(function (id) { var g = E.groupById(s, id); return g && g.patience / g.pMax < 0.35; });
+      var sp = D.waitSpots[0], qx = Math.min(Math.max(px(v, sp.x) + T * 0.5, v.ox + T * 1.2), v.ox + E.MW * T - T * 1.2);
+      chip(v, qx, (v.stickTop || 0) + T * 0.3, '↑ 入口 ' + s.queue.length + '組' + (low ? '！' : ''), 'rgba(17,19,26,.9)', low ? '#ffb4a8' : '#ffd59a', low ? C.bad : C.warn);
+    }
+    if (!v.cam) return;
     s.counters.forEach(function (c) {
       if (!c.unlocked) return;
       var urgent = null;
@@ -216,13 +238,29 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     ctx.strokeStyle = 'rgba(17,19,26,.7)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 0.5);
   }
-  function chip(v, x, y, text, bg, fg, border) {
+  // 部位の札：部位の色の地に名前。鉄板・手に持った肉・台の上の肉・ショーケースで同じ形にする
+  // （本人指定 2026-11-20「携帯だと、どれがどのお肉か見分けられない」）
+  function cutChip(v, x, y, mt, maxW) {
+    var ctx = v.ctx, fs = fz(v, 0.24, 11);
+    ctx.font = '800 ' + fs + 'px ' + FONT;
+    var w = ctx.measureText(mt.abbr).width + fs * 0.7, h = fs * 1.4;
+    if (maxW && w > maxW) w = maxW;
+    ctx.fillStyle = mt.color; rr(ctx, x - w / 2, y - h / 2, w, h, 4); ctx.fill();
+    ctx.strokeStyle = 'rgba(17,19,26,.85)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = inkOn(mt.color); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(mt.abbr, x, y + 0.5, Math.max(1, w - fs * 0.45));
+    return w;
+  }
+  function cutChipW(v, mt) { var fs = fz(v, 0.24, 11); v.ctx.font = '800 ' + fs + 'px ' + FONT; return v.ctx.measureText(mt.abbr).width + fs * 0.7; }
+  function heldMeat(h) { return !h ? null : meatOf(h.k === 'steak' ? h.m : (h.k === 'dish' && h.food && h.food.k === 'steak' ? h.food.m : null)); }
+  // maxW を渡すと、その幅に収める（文字は横に詰める。拡大のときの注文の札：隣の席の札と重ねない）
+  function chip(v, x, y, text, bg, fg, border, maxW) {
     var ctx = v.ctx, fs = fz(v, 0.22, 11);
     ctx.font = '700 ' + fs + 'px ' + FONT;
     var w = Math.max(fs * 2, ctx.measureText(text).width + fs * 0.7), h = fs * 1.45;
+    if (maxW && w > maxW) w = maxW;
     ctx.fillStyle = bg; rr(ctx, x - w / 2, y - h / 2, w, h, h / 2); ctx.fill();
     if (border) { ctx.strokeStyle = border; ctx.lineWidth = 2; ctx.stroke(); }
-    ctx.fillStyle = fg || '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1);
+    ctx.fillStyle = fg || '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1, Math.max(1, w - fs * 0.45));
     return w;
   }
   R.chip = chip;
@@ -386,8 +424,13 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     var col = cl === 'raw' ? 'rgba(17,19,26,.85)' : (cl === 'burnt' ? C.bad : C[cl]);
     var pulse = (cl !== 'raw' && cl !== 'burnt' && want[cl]) ? 1 : 0;
     var mt = meatOf(it.m);
-    chip(v, cx, cy + T * 0.44, label, col, '#fff', pulse ? '#fff' : (mt ? mt.color : null));
-    if (mt) miniChip(v, cx, cy - T * 0.5, mt.abbr, mt.color, inkOn(mt.color));
+    chip(v, cx, cy + T * 0.44, label, col, '#fff', pulse ? '#fff' : (mt ? mt.color : null), v.zoomed ? T - 3 : 0);
+    if (mt) {
+      // 隣の鉄板にも部位の札があって横に重なるなら、1つおきに上へずらす
+      var nb = c.slots[i - 1], dy = 0, fs = fz(v, 0.24, 11);
+      if (!v.zoomed && i % 2 && nb && nb.k === 'steak' && meatOf(nb.m) && (cutChipW(v, mt) + cutChipW(v, meatOf(nb.m))) / 2 > T - 2) dy = -fs * 1.5;
+      cutChip(v, cx, cy - T * 0.5 + dy, mt, v.zoomed ? T - 3 : 0);   // 拡大：1枚の鉄板の幅に収める
+    }
   }
   function riceRing(v, it, cx, cy) {
     var cl = E.classify(it);
@@ -458,17 +501,23 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
   // 設備の名前は最後にまとめて描く（手前の設備に隠れないように）
   function drawLabels(v, s) {
     var ctx = v.ctx, T = v.T;
-    if (T < 40) return;
-    var fs = Math.round(Math.max(12, Math.min(14, T * 0.19)));
+    // 1マスが小さい（40px 未満）ときは名前を出さない。ただしスマホの「全体」では、部位のショーケースだけは出す（どの部位か分かるように）
+    var meatOnly = T < 40;
+    if (meatOnly && !v.phone) return;
+    var fs = v.phone ? (meatOnly ? 12 : 13) : Math.round(Math.max(12, Math.min(14, T * 0.19)));
     ctx.font = '600 ' + fs + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    s.stations.forEach(function (st) {
+    var ws = {}, list = s.stations.filter(function (st) { var pm = D.stations[st.type].provides; return !meatOnly || (pm && meatOf(pm)); });
+    list.forEach(function (st) { ws[st.x + ',' + st.y] = ctx.measureText(D.stations[st.type].label).width + 8; });
+    list.forEach(function (st) {
       var x = px(v, st.x) + T / 2, y = py(v, st.y) + T * 0.8;
-      var t = D.stations[st.type].label;
-      var w = ctx.measureText(t).width + 8;
-      ctx.fillStyle = 'rgba(17,19,26,.72)'; rr(ctx, x - w / 2, y - fs * 0.62, w, fs * 1.24, 4); ctx.fill();
+      var t = D.stations[st.type].label, w = ws[st.x + ',' + st.y], wl = ws[(st.x - 1) + ',' + st.y];
+      if (st.x % 2 && wl && (w + wl) / 2 > T - 2) y += fs * 1.3;   // 左隣の名前と重なるなら、1つおきに下へずらす
       var pm = D.stations[st.type].provides, mt = pm && meatOf(pm);
-      if (mt) { ctx.fillStyle = mt.color; ctx.fillRect(x - w / 2, y + fs * 0.5, w, 2); }
-      ctx.fillStyle = 'rgba(243,237,228,.9)'; ctx.fillText(t, x, y + 0.5);
+      // ショーケースの名前は部位の色の札（同じ赤い肉の絵でも、どの部位か分かるように）
+      ctx.fillStyle = mt ? mt.color : 'rgba(17,19,26,.72)'; rr(ctx, x - w / 2, y - fs * 0.62, w, fs * 1.24, 4); ctx.fill();
+      if (mt) { ctx.strokeStyle = 'rgba(17,19,26,.85)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.font = '800 ' + fs + 'px ' + FONT; }
+      ctx.fillStyle = mt ? inkOn(mt.color) : 'rgba(243,237,228,.9)'; ctx.fillText(t, x, y + 0.5);
+      if (mt) ctx.font = '600 ' + fs + 'px ' + FONT;
     });
   }
   var _t = 0, _v = null; function time0() { return _t; }
@@ -559,14 +608,18 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
   function orderBubble(v, s, gu, x, y) {
     var parts = bubbleParts(gu);
     if (!parts.length) { chip(v, x, y, '✓', 'rgba(124,196,138,.9)', C.ink); return; }
-    var fs = fz(v, 0.22, 11);
+    var fs = fz(v, 0.22, 11), maxW = v.zoomed ? v.T - 3 : 0;   // 拡大：1人の札は1席の幅に収める（1つおきにずらす余地が上にない）
     parts.forEach(function (p, i) {
       var yy = y - i * fs * rowK(v);
-      if (!p.row) { chip(v, x, yy, p.t, p.bg, p.fg, p.border); return; }
+      if (!p.row) { chip(v, x, yy, p.t, p.bg, p.fg, p.border, maxW); return; }
       // 小さい札を横に並べる（前菜の残り・ドリンク・ご飯）
       var ctx = v.ctx, mfs = fz(v, 0.18, 9); ctx.font = '700 ' + mfs + 'px ' + FONT;
       var ih = mfs * 1.4;
-      var ws = p.row.map(function (r) { return r.icon ? ih * 0.9 : ctx.measureText(r.t).width + mfs * 0.6; }), gap = 2, tw = ws.reduce(function (a, b) { return a + b; }, 0) + gap * (ws.length - 1), xx = x - tw / 2;
+      var ws = p.row.map(function (r) { return r.icon ? ih * 0.9 : ctx.measureText(r.t).width + mfs * 0.6; }), gap = 2, tw = ws.reduce(function (a, b) { return a + b; }, 0) + gap * (ws.length - 1);
+      // 席の幅に入らなければ、その段だけ小さくする
+      var k0 = maxW && tw > maxW ? maxW / tw : 1;
+      if (k0 < 1) { ctx.save(); ctx.translate(x, yy); ctx.scale(k0, k0); ctx.translate(-x, -yy); }
+      var xx = x - tw / 2;
       p.row.forEach(function (r, k) {
         var cx2 = xx + ws[k] / 2, cy2 = yy + fs * 0.1;
         if (r.icon) {   // ドリンクはグラスの絵（文字だと隣の札に重なる）
@@ -579,6 +632,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
         } else miniChip(v, cx2, cy2, r.t, r.bg, r.fg);
         xx += ws[k] + gap;
       });
+      if (k0 < 1) ctx.restore();
     });
   }
   // 注文の札（下から：焼き加減 → 肉の種類 → ご飯 → 酒）
@@ -1044,7 +1098,11 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       if (st.clean > 0) { blit(b, 'plate_white', x + 12, y + 14); pending.push({ badge: String(st.clean), x: x + 26, y: y + 6 }); }
     } else if (st.type === 'rack') {
       pending.push(st.plates > 0 ? { badge: String(st.plates), x: x + 26, y: y + 6 } : { text: '皿なし', x: x + 16, y: y + 14 });
-    } else if (st.item) pxItem(b, st.item, cx, cy, pending);
+    } else if (st.item) {
+      pxItem(b, st.item, cx, cy, pending);
+      var sm = !def.part && heldMeat(st.item);
+      if (sm) pending.push({ cut: sm, x: cx, y: y + 1 });   // 台に置いた肉の部位
+    }
     if ((st.type === 'sink' || st.type === 'washer') && st.washT > 0 && st.dirty > 0)
       pending.push({ bar: st.washT / (st.type === 'sink' ? D.work.wash : D.washerSec), x: cx, y: y - 4, color: '#9fd0ff' });
     if (st.type === 'board' && st.appT > 0 && st.item && st.item.k === 'plates')
@@ -1209,6 +1267,8 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     blitCook(b, pose.f, cx, gy + dy, pose.m);
     if (h && h.k === 'station') pxStation(b, s, h.st, cx - 16, gy - 62, pending, true);
     else if (h && p.fy >= 0) pxItem(b, h, hx, hy, pending);
+    var hm = !p.staff && heldMeat(h);
+    if (hm) pending.push({ cut: hm, x: cx, y: gy - 37 + dy });   // 自分が持っている肉の部位は頭の上に
   }
   function pxPlayerOld(b, s, p, pending) {
     var bob = p.moving ? Math.round(Math.abs(Math.sin(p.bob)) * -2) : 0;
@@ -1274,7 +1334,8 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     drawTarget(v, s, extra.target, extra.workable, v.time, extra.hint);
     pending.forEach(function (o) {
       var X = v.ox + o.x * k, Y = v.oy - EXT * v.T + o.y * k;
-      if (o.badge) badge(v, X, Y, o.badge, o.bg);
+      if (o.cut) cutChip(v, X, Y, o.cut);
+      else if (o.badge) badge(v, X, Y, o.badge, o.bg);
       else if (o.text) { ctx.fillStyle = C.bad; ctx.font = '700 ' + fz(v, 0.24, 11) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.text, X, Y); }
       else if (o.bar != null) progressBar(v, X, Y, v.T * 0.7, o.bar, o.color);
       else if (o.tag) tag(v, X, Y, o.tag, o.bg || '#8a5a1c');
@@ -1287,7 +1348,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
     ambient(v, s, dt);
     drawParticles(v, dt);
     ctx.restore();
-    if (v.cam) edgeAlerts(v, s);
+    if (v.cam || v.zoomed) edgeAlerts(v, s);
     if (v.flash > 0) { ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.35, v.flash) + ')'; ctx.fillRect(0, 0, v.w, v.h); v.flash -= dt * 2.2; }
   };
 
@@ -1315,8 +1376,12 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       var c = g.counter ? E.counterById(s, g.counter) : null;
       if (!c) return;
       // 札が横に重なる大きさのときは、1人おきに上下へずらす
-      var stagger = T < 52, fsB = fz(v, 0.22, 11), topB = py(v, 0.86);
+      var stagger = T < 52 && !v.zoomed, fsB = fz(v, 0.22, 11), topB = py(v, 0.86), barH = Math.max(6, T * 0.14);   // 拡大は札を1席の幅に収めるので、ずらさない
       var X0 = c.x0 + (g.off || 0);   // 相席なら、組の先頭の席から
+      // 札の上の端の限界：店の絵の上の端。拡大のときは画面の上の端（左上の数字の帯の下にかかる組は、帯の下）。
+      // 待ち時間のバーのぶんも空ける＝画面が下へ動いても札は上に残る
+      var top0 = v.zoomed ? (px(v, X0) < (v.stickRight || 0) ? (v.stickTop || 0) : 4) : -1e9;
+      var topLim = Math.max(v.oy - EXTV(v) + 2, top0 + barH + 6);
       if (g.state === 'waiting') g.guests.forEach(function (gu, i) {
         // 狭い画面では1席おきに上へずらす。ずらす幅は、両隣の札の高いほうの段数ぶん（2〜3段の札でも重ならない。左端の席は右隣を見る）
         var lift = 0;
@@ -1330,13 +1395,13 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
         }
         var by = py(v, 1.42) - lift, n = bubbleParts(gu).length || 1;
         var stackTop = by - (n - 1) * fsB * rowK(v) - fsB * 0.73;
-        if (stackTop < v.oy - EXTV(v) + 2) by += v.oy - EXTV(v) + 2 - stackTop;   // 画面の上で切れるなら、下げる（スマホ）
+        if (stackTop < topLim) by += topLim - stackTop;   // 画面の上で切れるなら、下げる（スマホ）
         orderBubble(v, s, gu, px(v, X0 + i) + T / 2, by);
-        topB = Math.min(topB, by - (n - 1) * fsB * rowK(v) - fsB * 0.73 - Math.max(6, T * 0.14) / 2 - 3);   // 待ち時間のバーは、いちばん上の札より上に
+        topB = Math.min(topB, by - (n - 1) * fsB * rowK(v) - fsB * 0.73 - barH / 2 - 3);   // 待ち時間のバーは、いちばん上の札より上に
       });
       var gx = px(v, X0) + (g.size * T) / 2;
-      if (g.state === 'waiting' || g.state === 'ordering') patienceBar(v, gx, Math.min(py(v, 0.86), topB), g.size * T * 0.9, g.state === 'ordering' ? 1 : g.patience / g.pMax);
-      if (g.state === 'ordering') chip(v, gx, py(v, 1.42), g.size < 3 ? '注文中…' : '注文を考えています…', 'rgba(17,19,26,.85)', C.cream);
+      if (g.state === 'waiting' || g.state === 'ordering') patienceBar(v, gx, Math.max(Math.min(py(v, 0.86), topB), top0 + barH / 2 + 2), g.size * T * 0.9, g.state === 'ordering' ? 1 : g.patience / g.pMax);
+      if (g.state === 'ordering') chip(v, gx, Math.max(py(v, 1.42), top0 + barH + fsB), g.size < 3 ? '注文中…' : '注文を考えています…', 'rgba(17,19,26,.85)', C.cream);
       // 記念日の札は左、思い出は右。記念日の小さい組（2人まで）は思い出を「✦」だけに（重なって読めなかった 2026-10-28）
       if (g.anniv) tag(v, Math.max(px(v, X0) + T * 0.2, v.ox + T * 0.42), py(v, 2.3), '記念日', '#8a2f55');
       if (g.mc) { ctx.fillStyle = C.gold; ctx.font = '700 ' + fz(v, 0.26, 11) + 'px ' + FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(g.anniv && g.size <= 2 ? '✦' : '✦ 思い出', px(v, X0 + g.size) - 2, py(v, 2.3)); }

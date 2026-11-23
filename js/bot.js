@@ -30,13 +30,37 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
     s.counters.forEach(function (c) { if (c.unlocked) E.groupsAt(s, c).forEach(function (g) { out.push({ c: c, g: g }); }); });
     return out.filter(function (o) { return o.g && o.g.state === 'waiting'; });
   }
+  // 出し先：待てる残りが半分を切った組（B.URGENT）がいれば、いちばん急ぐ組へ。いなければ、いちばん近い席へ
+  //  （カウンターの並び順で選ぶと、増設したCがいつも後回しになり、前菜を待つ組が怒って帰っていた。D-048）
+  B.URGENT = 0.5;
+  function mostUrgent(list, p) {
+    var frac = function (o) { return (o.g.patience || 0) / Math.max(1, o.g.pMax || 1); };
+    var danger = list.filter(function (o) { return frac(o) < B.URGENT; });
+    var best = null;
+    if (danger.length) { danger.forEach(function (o) { if (!best || (o.g.patience || 0) < (best.g.patience || 0)) best = o; }); return best; }
+    if (!p) return list[0] || null;
+    var dist = function (o) { return Math.abs(o.c.x0 + o.i + 0.5 - p.x); };
+    list.forEach(function (o) {
+      if (!best || dist(o) < dist(best) - 0.01 || (Math.abs(dist(o) - dist(best)) <= 0.01 && (o.g.patience || 0) < (best.g.patience || 0))) best = o;
+    });
+    return best;
+  }
+  // 手に持った料理を出せるお客様のうち、いちばん急ぐ人（注文どおりの人を先に）
+  function urgentServable(s, item, p) {
+    var exact = [], any = [];
+    s.counters.forEach(function (c) {
+      if (!c.unlocked) return;
+      E.servableGuests(s, c, item).forEach(function (o) { var t = { c: c, g: o.g, i: o.idx }; any.push(t); if (o.subst === null) exact.push(t); });
+    });
+    return mostUrgent(exact.length ? exact : any, p);
+  }
   // 肉の種類（神戸牛・エンペラー・ハラル・部位）＋ご飯・酒の数を0で
   function zeroCounts() { var o = { rice: 0, app: 0 }; Object.keys(D.meats).concat(Object.keys(D.drinks)).forEach(function (m) { o[m] = 0; }); return o; }
   // 担当ごとにする仕事（スタッフ）。担当なし（自分・検証の Bot）は全部
   var ROLE = {
     grill: { plates: 1, burnt: 1, meat: 1, rice: 1, clean: 1, wash: 1 },   // 手が空いたら鉄板の掃除・皿の回収と洗い物も（2026-10-28）
     kitchen: { wash: 1, clean: 1, apps: 1, drinks: 1 },
-    mc: { mc: 1 }
+    mc: { mc: 1, plates: 1, burnt: 1, meat: 1, rice: 1, clean: 1, wash: 1 }   // フランベを先に、ほかの時間は焼き担当と同じ仕事（本人指定 2026-11-21「MCが焼きの担当をしていない」）
   };
   function roleCan(b) { return function (cat) { return !b || !b.role || !!ROLE[b.role][cat]; }; }
   B.ROLE = ROLE;
@@ -156,11 +180,22 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
     ['emperor', 'halal'].concat(E.cutsOpen(s), ['beef']).forEach(function (m) { meatShort += Math.max(0, (nd.need[m] || 0) - (nd.pipe[m] || 0)); });
     return meatShort < 3;
   }
+  // キッチン担当を雇っている店長（Bot）は、ドリンク・前菜・洗い物をキッチン担当に任せる。たまってきたら手伝う
+  //（デモで店長が全部先に片付け、キッチン担当が立ったままだった 2026-11-21）
+  function leaveKitchen(s, b, nd) {
+    if (b && b.role) return false;
+    if (!s.players.some(function (q) { return q.staff && q.role === 'kitchen'; })) return false;
+    var back = Math.max(0, nd.need.app - nd.pipe.app);
+    Object.keys(D.drinks).forEach(function (d) { back += Math.max(0, nd.need[d] - nd.pipe[d]); });
+    return back < B.KITCHEN_HELP_AT;
+  }
+  B.KITCHEN_HELP_AT = 4;
   B.choose = function (s, p, b) {
     var h = p.hold;
     var mcPolicy = b ? b.mc : 'slack';
-    var can = roleCan(b);
     var nd = needsOf(s, p);
+    var can0 = roleCan(b), leaveK = leaveKitchen(s, b, nd);
+    var can = function (cat) { return can0(cat) && !(leaveK && (cat === 'apps' || cat === 'drinks')); };
     if (h) return chooseHolding(s, p, h, nd, b);
     var grillHelp = grillHelping(s, b, nd);
     var mcTaken = function (g) { return s.players.some(function (q) { return q !== p && q.claim && q.claim.k === 'mc' && q.claim.g === g.id; }); };
@@ -193,6 +228,11 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       var anniv = waitingOrEating(s).filter(function (o) { return o.g.anniv && mcReady(o); })[0];
       if (anniv) return T(anniv.c.x0 + (anniv.g.off || 0) + anniv.g.size - 1, 3, 'work', '記念日の思い出づくり', { claim: { k: 'mc', g: anniv.g.id, n: 0 } });
     }
+    // 3.5) MC担当は、フランベどきの組がいれば焼くより先に（焼きもするようになったので、フランベを逃さないように）
+    if (b && b.role === 'mc' && mcPolicy !== 'never') {
+      var mcFirst = waitingOrEating(s).filter(mcReady)[0];
+      if (mcFirst) return T(mcFirst.c.x0 + (mcFirst.g.off || 0), 3, 'work', '思い出づくり（フランベ）', { claim: { k: 'mc', g: mcFirst.g.id, n: 0 } });
+    }
     // 4) 入口で待っている → 片付けを先に
     if (queueWaiting && can('clean')) {
       var dirtyC = s.counters.filter(function (c) { return c.unlocked && E.counterEmpty(c) && c.dirty.some(function (d) { return d > 0; }); })[0];
@@ -208,6 +248,11 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       if (nd.need[m] <= 0) continue;
       var onBoard = s.stations.filter(function (st) { return st.type === 'bench' && st.item && st.item.k === 'steak' && st.item.m === m && st.item.t === 0; })[0];
       if (onBoard && freeSlotFor(s, m)) return T(onBoard.x, onBoard.y, 'grab', '作業台の肉を持つ');
+    }
+    // 作業台に置いたご飯も、焼く場所が空いたら持つ（前は置いたままになり、ご飯待ちのお客様が帰った 2026-11-21）
+    if (can('rice') && nd.need.rice > 0) {
+      var riceB = s.stations.filter(function (st) { return st.type === 'bench' && st.item && st.item.k === 'rice' && st.item.t === 0; })[0];
+      if (riceB && freeSlotFor(s, 'rice')) return T(riceB.x, riceB.y, 'grab', '作業台のご飯を持つ');
     }
     // 6) 足りない肉を取りに行く
     for (ki = 0; ki < kinds.length; ki++) {
@@ -258,7 +303,7 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
     if (dc) return T(dc.x0, 3, 'grab', '汚れた皿を回収');
     var sc = s.counters.filter(function (c) { return c.unlocked && E.counterEmpty(c) && c.needsScrape; })[0];
     if (sc) return T(sc.x0, 3, 'work', '鉄板を掃除（作業・長押し）');
-    var sinkD = nearestStation(s, p, function (st) { return st.type === 'sink' && st.dirty > 0; });
+    var sinkD = !leaveK && nearestStation(s, p, function (st) { return st.type === 'sink' && st.dirty > 0; });
     if (sinkD) return T(sinkD.x, sinkD.y, 'work', '皿を洗う（作業・長押し）');
     // 9) 手が空いたら思い出づくり
     if (mcPolicy === 'slack' && can('mc')) {
@@ -267,13 +312,30 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
     }
     // 10) 焼き上がり待ち：皿を先に持つ
     var soon = readySlots(s, 3);
-    if (soon.length && !grillHelp && E.cleanPlatesAvailable(s) > 0) {
+    // 盛って出せる人だけ（キッチン担当が皿を持ったまま立ち止まっていた 2026-11-21）
+    if (soon.length && !grillHelp && can('plates') && E.cleanPlatesAvailable(s) > 0) {
       var src2 = nearestStation(s, p, function (st) { return (st.type === 'rack' && st.plates > 0) || ((st.type === 'sink' || st.type === 'washer') && st.clean > 0); });
       if (src2) return T(src2.x, src2.y, 'grab', '皿を持って焼き上がりを待つ', { wantPlates: Math.min(soon.length, D.player.plateCarryMax) });
     }
+    // 11) MC担当：焼き・片付けもなければ、まだ誰も前にいない組の前で話して待つ（関わった時間はチップに効く）
+    // 前は何もせず立ったままで、動かないように見えた（本人 2026-11-21「MCが動かないバグ」）
+    if (b && b.role === 'mc') return talkSpot(s, p, b);
     return null;
   };
 
+  // MC担当の待ち場所：フランベ前の組のうち、関わった時間が足りず、ほかの人が前にいない組（同じ組は満ちるまで続ける）
+  function talkSpot(s, p, b) {
+    var list = waitingOrEating(s).filter(function (o) { return !o.g.mc && E.careFrac(o.g) < 1; });
+    var others = function (o) {
+      var x0 = o.c.x0 + (o.g.off || 0) - 0.2, x1 = o.c.x0 + (o.g.off || 0) + o.g.size + 0.2;
+      return s.players.some(function (q) { return q !== p && q.y < 5.3 && q.x >= x0 && q.x <= x1; });
+    };
+    var pick = list.filter(function (o) { return o.g.id === b.talkG; })[0] ||
+      list.filter(function (o) { return !others(o); }).sort(function (a, c) { return E.careFrac(a.g) - E.careFrac(c.g); })[0];
+    b.talkG = pick ? pick.g.id : null;
+    if (!pick) return null;
+    return T(pick.c.x0 + (pick.g.off || 0) + Math.floor((pick.g.size - 1) / 2), 3, 'wait', 'お客様の前で話して待つ');
+  }
   function kindsWaiting(nd) { return Object.keys(nd.need).filter(function (k) { return nd.need[k] > nd.pipe[k]; }); }
   function firstSink(s) { return s.stations.filter(function (st) { return st.type === 'sink'; })[0]; }
   function countOnSlots(s, m) { var n = 0; s.counters.forEach(function (c) { c.slots.forEach(function (it) { if (it && it.k === 'steak' && it.m === m && E.classify(it) !== 'burnt') n++; }); }); return n; }
@@ -314,8 +376,8 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       var cl = E.classify(h);
       // 焼き上がったご飯を持っている → 頼んだ人のカウンターへ持って出す
       if (h.k === 'rice' && cl === 'ok') {
-        var rc2 = null; s.counters.forEach(function (c) { if (!rc2 && c.unlocked && E.servableGuests(s, c, h).length) rc2 = c; });
-        if (rc2) return T(rc2.x0, 3, 'grab', 'ご飯をお出しする');
+        var rc2 = urgentServable(s, h, p);
+        if (rc2) return T(rc2.c.x0 + rc2.i, 3, 'grab', 'ご飯をお出しする');
       }
       if (cl === 'burnt' || (h.t > 0 && cl !== 'raw')) {
         var tr = nearestStation(s, p, function (st) { return st.type === 'trash'; });
@@ -336,24 +398,25 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       return null;
     }
     if (h.k === 'apps') {
-      var ta = null;
-      waitingGroups(s).forEach(function (o) { if (!ta) o.g.guests.forEach(function (gu, gi) { if (!ta && (gu.got.apps || 0) < (gu.order.apps || 0)) ta = { c: o.c, i: (o.g.off || 0) + gi }; }); });
+      var taL = [];
+      waitingGroups(s).forEach(function (o) { o.g.guests.forEach(function (gu, gi) { if ((gu.got.apps || 0) < (gu.order.apps || 0)) taL.push({ c: o.c, g: o.g, i: (o.g.off || 0) + gi }); }); });
+      var ta = mostUrgent(taL, p);
       if (ta) return T(ta.c.x0 + ta.i, 3, 'grab', '前菜を出す');
       var tra = nearestStation(s, p, function (st) { return st.type === 'trash'; });
       return tra ? T(tra.x, tra.y, 'grab', '余った前菜を下げる（ロス）') : null;
     }
     if (h.k === 'drink') {
-      var tgt = null, hl = E.drinkList(h);
-      waitingGroups(s).forEach(function (o) { if (!tgt) o.g.guests.forEach(function (gu, gi) { if (!tgt && hl.indexOf(gu.order.drink) >= 0 && !gu.got.drink) tgt = { c: o.c, i: (o.g.off || 0) + gi, d: gu.order.drink }; }); });
+      var tgL = [], hl = E.drinkList(h);
+      waitingGroups(s).forEach(function (o) { o.g.guests.forEach(function (gu, gi) { if (hl.indexOf(gu.order.drink) >= 0 && !gu.got.drink) tgL.push({ c: o.c, g: o.g, i: (o.g.off || 0) + gi, d: gu.order.drink }); }); });
+      var tgt = mostUrgent(tgL, p);
       if (tgt) return T(tgt.c.x0 + tgt.i, 3, 'grab', D.drinks[tgt.d].name + 'を出す');
       var back = nearestStation(s, p, function (st) { return hl.indexOf(D.stations[st.type].provides) >= 0; });
       return back ? T(back.x, back.y, 'work', 'ドリンクを戻す（作業・長押し）') : null;
     }
     if (h.k === 'dish') {
       // 皿にのせた料理：出せる鉄板へ。どこにも出せなければ捨てる
-      var dc = null;
-      s.counters.forEach(function (c) { if (!dc && c.unlocked && E.servableGuests(s, c, h.food).length) dc = c; });
-      if (dc) return T(dc.x0, 3, 'grab', '皿ごと運んで出す');
+      var dc = urgentServable(s, h.food, p);
+      if (dc) return T(dc.c.x0 + dc.i, 3, 'grab', '皿ごと運んで出す');
       var tr3 = nearestStation(s, p, function (st) { return st.type === 'trash'; });
       return tr3 ? T(tr3.x, tr3.y, 'grab', '料理を下げる（ロス）') : null;
     }
@@ -376,6 +439,14 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
       if (can('apps') && nd.need.app - nd.pipe.app > 0) {
         var fb = nearestStation(s, p, function (st) { return st.type === 'board' && (!st.item || (st.item.k === 'plates' && st.item.n < D.work.appMax)); });
         if (fb) return T(fb.x, fb.y, 'grab', 'まな板に皿を並べる（前菜）');
+      }
+      // スタッフは、すぐ使わない皿を持ち続けない：皿棚に戻して手を空ける（ここまでで、焼き上がり間近・前菜の皿は使い道が決まっている）
+      // 前は皿を持ったまま立ち止まり、汚れた皿の回収もできなかった（キッチン担当・MC担当 2026-11-21）
+      if (b && b.role) {
+        var home = nearestStation(s, p, function (st) { return st.type === 'rack'; });
+        if (home) return T(home.x, home.y, 'work', '皿を皿棚に戻す（作業・長押し）');
+        var bn = nearestStation(s, p, function (st) { return st.type === 'bench' && !st.item; });
+        return bn ? T(bn.x, bn.y, 'grab', '皿を作業台に置く') : null;
       }
       // 出すものが無い → 空いている作業台に置く
       if (Object.keys(nd.need).reduce(function (a, k) { return a + nd.need[k]; }, 0) <= 0) return null;
@@ -531,16 +602,38 @@ if (typeof module !== 'undefined' && !WK.Engine) WK = require('./engine.js');
     if (policy.layout) B.autoLayout(s);
   };
 
-  // 検証用の配置：鉄板の真後ろ（5段目）に皿棚・洗い場・まな板・ショーケースを寄せる
-  // 5段目は 5列目と10列目を通路に残す。あふれた設備は7段目へ（6段目は通路）
-  B.autoLayout = function (s) {
-    // 部位の店：部位のショーケースを神戸牛ショーケースの場所から順に（よく出る順＝解放の順）
+  // デモ・検証用の自動配置（毎朝の開店前）。置く順番 order の設備を、置き場所 spots の順に置く
+  // 5段目は鉄板の真後ろ（手が届く）、6段目は通路、7段目は奥。5段目・7段目の5列目と10列目は通路に残す
+  // 置く順番と置き場所は、Bot に15日間を遊ばせて探した（本人依頼 2026-11-20「もっと良い配置を探して」、tools/layoutsearch.js）
+  // 前の決まり（皿棚・洗い場・最初の部位を先に）より、鬼ムズのデモ条件で利益 +16万（新しい100通りで確かめた）。前の表は tools/layouts/ にある
+  // cut0〜cut2 は解放の順の部位、cutRest は4つ目からの部位、showcase? は部位のない店だけの神戸牛。左右反転の前の座標で書く（置くときに反転する）
+  B.LAYOUT = {
+    order: [
+      'washer', 'rack', 'board', 'showcase?', 'cut2', 'beer', 'cut1', 'sink', 'rice',
+      'board', 'water', 'cut0', 'sake', 'wine', 'hshowcase', 'cutRest', 'eshowcase', 'sink',
+      'trash', 'bench', 'showcase', 'bench', 'board', 'bench', 'bench', 'bench'
+    ],
+    spots: [
+      [3, 5], [2, 5], [4, 5], [1, 5], [7, 5], [6, 5], [8, 5], [9, 5], [12, 5], [11, 5], [2, 7], [6, 7],
+      [3, 7], [4, 7], [14, 5], [7, 7], [12, 7], [9, 7], [11, 7], [8, 7], [13, 7], [1, 7], [14, 7], [13, 5]
+    ]
+  };
+  B.layoutTypes = function (s, order) {
     var cutTypes = E.cutsOpen(s).map(function (id) { return 'sc_' + id; });
-    var order = ['rack', 'sink'].concat(cutTypes.slice(0, 1), cutTypes.length ? [] : ['showcase'], ['board', 'beer', 'water', 'washer'], cutTypes.slice(1, 3),
-      ['eshowcase', 'rice', 'sake', 'wine', 'hshowcase'], cutTypes.slice(3), ['board', 'sink', 'trash', 'bench', 'showcase', 'bench', 'board', 'bench', 'bench', 'bench']);
-    var spots = [[3, 5], [2, 5], [4, 5], [1, 5], [7, 5], [6, 5], [8, 5], [9, 5], [12, 5], [11, 5], [13, 5], [14, 5],
-      [3, 7], [4, 7], [6, 7], [7, 7], [8, 7], [9, 7], [11, 7], [12, 7], [13, 7], [14, 7], [1, 7], [2, 7]];
-    spots = spots.map(function (sp) { return [D.mirrorX(sp[0]), sp[1]]; });   // 店が左右反転なら、置き場所も反転
+    var out = [];
+    order.forEach(function (t) {
+      var m = /^cut(\d)$/.exec(t);
+      if (m) { if (cutTypes[+m[1]]) out.push(cutTypes[+m[1]]); }
+      else if (t === 'cutRest') out.push.apply(out, cutTypes.slice(3));
+      else if (t === 'showcase?') { if (!cutTypes.length) out.push('showcase'); }
+      else out.push(t);
+    });
+    return out;
+  };
+  B.autoLayout = function (s, plan) {
+    plan = plan || B.LAYOUT;
+    var order = B.layoutTypes(s, plan.order);
+    var spots = plan.spots.map(function (sp) { return [D.mirrorX(sp[0]), sp[1]]; });   // 店が左右反転なら、置き場所も反転
     var before = s.stations.map(function (st) { return [st.x, st.y]; });
     var placed = [], k = 0;
     order.forEach(function (type) {

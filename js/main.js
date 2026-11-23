@@ -20,7 +20,7 @@
   var coarse = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
   if (coarse) inputMode = 'touch';
   // lite＝軽量モード（スマホは自動でオン）：画面の細かさを1.5倍まで・粒を半分・重い端末では描くのを30コマに・夜の画面の間は描かない
-  var settings = Object.assign({ sound: true, hints: null, reduced: reducedMq.matches, touch: coarse, lite: coarse }, load(SET_KEY) || {});
+  var settings = Object.assign({ sound: true, hints: null, reduced: reducedMq.matches, touch: coarse, lite: coarse, zoom: true }, load(SET_KEY) || {});
   // アプリとして入れる：Android・PC の Chrome は入れる案内を出せる（beforeinstallprompt）。iPhone は「ホーム画面に追加」の手順を見せる
   var installEvt = null;
   // iPhone アプリ（ios/ の入れ物）の中で動いているか：入れ物が UA に WagyuTeppanApp を付ける
@@ -110,14 +110,17 @@
       U.installIOS(function () { act.toTitle(); });
     },
     saveStatus: function () { return saveOk; },
-    getSettings: function () { return { sound: settings.sound, hints: settings.hints === null ? true : settings.hints, reduced: settings.reduced, touch: settings.touch, lite: settings.lite }; },
+    getSettings: function () { return { sound: settings.sound, hints: settings.hints === null ? true : settings.hints, reduced: settings.reduced, touch: settings.touch, lite: settings.lite, zoom: settings.zoom }; },
     setSetting: function (id, v) {
       settings[id] = v; store(SET_KEY, settings);
       if (id === 'sound') { A.init(); A.setOn(v); }
       if (id === 'reduced') view.reduced = v;
       if (id === 'touch') U.showTouch(v);
       if (id === 'lite') { view.lite = v; halfRate = false; workEma = 0; resize(); }
-    }
+      if (id === 'zoom') { view.zoom = v; resize(); }
+    },
+    // スマホの「拡大／全体」を切り替える（画面右上のボタン）
+    toggleZoom: function () { act.setSetting('zoom', !settings.zoom); }
   };
 
   function enterPrep() {
@@ -363,7 +366,7 @@
       acc += dt;
       while (acc >= STEP) { E.step(demo, STEP, [B.input(demo, demo.players[0], demoBot, STEP)]); acc -= STEP; }
       demo.fx.length = 0;
-      R.follow(view, demo.players[0].x, dt);
+      R.follow(view, demo.players[0].x, dt, demo.players[0].y);
       if (drawNow) R.draw(view, demo, rdt, {});
       input.grab = false;
       return;
@@ -376,7 +379,9 @@
         var first = true;
         while (acc >= STEP) {
           var inp = auto ? B.input(s, s.players[0], auto.bot, STEP) : buildInput();
-          if (!first) inp.grab = false;
+          // 人の「つかむ」は1回押しなので、1コマで何歩か進めるときは最初の1歩だけに効かせる。
+          // デモの Bot は1歩ごとに自分で押すので捨てない（捨てると2倍速で「つかむ」が全部消え、肉を焼けなかった）
+          if (!first && !auto) inp.grab = false;
           E.step(s, STEP, [inp]);
           if (first) input.grab = false;
           first = false;
@@ -402,7 +407,7 @@
       var workable = s.phase === 'service' ? E.workable(s, p) : null;
       hintT -= dt;
       if (hintT <= 0) { hintCache = (s.phase === 'service' && hintsOn()) ? B.suggest(s) : null; hintT = 0.3; }
-      R.follow(view, p.x, dt);
+      R.follow(view, p.x, dt, p.y);
       if (drawNow) R.draw(view, s, rdt, { target: target, workable: workable && p.workOn ? workable : (workable && workable.prog > 0 ? workable : null), hint: hintCache });
       U.hud(s);
       if (live) U.hint(s, p, inputMode, hintCache);
@@ -431,7 +436,14 @@
     var probe = document.getElementById('safeProbe');
     if (!probe) { probe = document.createElement('div'); probe.id = 'safeProbe'; probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)'; document.body.appendChild(probe); }
     var cs = getComputedStyle(probe), inset = Math.max(parseFloat(cs.paddingLeft) || 0, parseFloat(cs.paddingRight) || 0);
-    view.gutMin = inset + 124;
+    view.gutMin = inset + 124; view.inset = inset;
+    // 拡大（スマホの初めの見え方）：店を大きくして、数字と操作は店の上に重ねる。数字の帯の下の端を、注文の札の上の限界にする
+    root.classList.toggle('zoom', !!(view.phone && view.zoom));
+    var zb = document.getElementById('btnZoom'); if (zb) zb.setAttribute('aria-pressed', view.zoom ? 'true' : 'false');
+    var hud = document.getElementById('hud'), sr = st.getBoundingClientRect();
+    var day = hud && hud.querySelector('.stat-day'), more = document.getElementById('btnHudMore');   // 数字の帯（1段目）の下の端と右の端
+    view.stickTop = view.phone && view.zoom && day ? Math.max(0, day.getBoundingClientRect().bottom - sr.top) + 4 : 0;
+    view.stickRight = view.phone && view.zoom && more ? more.getBoundingClientRect().right - sr.left + 16 : 0;   // 「10日目」で少し広がるぶんの余裕
     R.resize(view, st.clientWidth, st.clientHeight);
     // 左右の余白（店の外）の幅を CSS に渡す：情報と操作ボタンをそこに並べる
     root.style.setProperty('--gut-l', Math.max(0, view.ox) + 'px');
@@ -466,7 +478,7 @@
     window.addEventListener('resize', applyRotate);
     window.addEventListener('orientationchange', function () { setTimeout(applyRotate, 200); });
     view = R.create(document.getElementById('cv'));
-    view.reduced = settings.reduced; view.lite = settings.lite;
+    view.reduced = settings.reduced; view.lite = settings.lite; view.zoom = settings.zoom;
     U.init(act);
     U.showTouch(settings.touch);
     A.on = settings.sound;
@@ -506,8 +518,10 @@
       autoplay: function (difficulty, speed, policy) {
         if (difficulty === null) { auto = null; return 'stop'; }
         U.close(); act.startGame(difficulty || 'easy');
+        // policy に 'counter' と書くと、4日目からキッチン＋MCを雇い、増設カウンターも買うデモになる（D-048 を見せる用）
+        if (policy === 'counter') policy = { hire: [{ id: 'kitchen', from: 4 }, { id: 'mc', from: 4 }], buy: ['plates', 'sakeShelf', 'wineCellar', 'sink', 'board', 'counter', 'washer', 'sneakers', 'reservation', 'bench', 'highHeat', 'showcase'] };
         auto = { bot: B.create({ mc: 'slack', react: 0.14, seed: 11 }), speed: speed || 1, t: 0, seed: 11,
-          policy: policy || { hire: [{ id: 'kitchen', from: 4 }, { id: 'mc', from: 7 }], buy: ['plates', 'sakeShelf', 'wineCellar', 'sink', 'board', 'washer', 'sneakers', 'reservation', 'bench', 'highHeat', 'showcase'] } };
+          policy: (policy && typeof policy === 'object') ? policy : { hire: [{ id: 'kitchen', from: 4 }, { id: 'mc', from: 7 }], buy: ['plates', 'sakeShelf', 'wineCellar', 'sink', 'board', 'washer', 'sneakers', 'reservation', 'bench', 'highHeat', 'showcase'] } };
         return s.phase;
       },
       night: function (policy) { B.night(s, policy || { hire: [{ id: 'kitchen', from: 6 }] }); if (s.phase === 'shop') { E.nextDay(s); enterPrep(); } return s.phase; }
