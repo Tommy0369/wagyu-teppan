@@ -495,29 +495,46 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
         break;
     }
     if (st.item && st.type !== 'rack') drawItem(v, st.item, cx, cy + T * 0.02, 0.9);
-    if (st.isNew && s.phase === 'prep') tag(v, cx, Y - H - T * 0.05, 'NEW', '#8a5a1c');
+    if (st.isNew && s.phase === 'prep') tag(v, cx, shelfMeat(st) ? Y + T * 0.75 : Y - H - T * 0.05, 'NEW', '#8a5a1c');   // 肉の棚は上面に名前があるので前面に
     if (lifted) { ctx.strokeStyle = C.gold; ctx.lineWidth = 2; rr(ctx, X + pad, Y + pad - H, T - pad * 2, T - pad * 2, T * 0.1); ctx.stroke(); }
   }
   // 設備の名前は最後にまとめて描く（手前の設備に隠れないように）
-  function drawLabels(v, s) {
-    var ctx = v.ctx, T = v.T;
-    // 1マスが小さい（40px 未満）ときは名前を出さない。ただしスマホの「全体」では、部位のショーケースだけは出す（どの部位か分かるように）
+  function shelfMeat(st) { var pm = D.stations[st.type].provides; return (pm && meatOf(pm)) || null; }
+  // 名前の札の位置と大きさ。札は自分の1マスの幅に収め、肉の棚は棚の上面に出す
+  // （本人指定 2026-11-24「縦に並べると文字が重なり、どれがどのお肉か分からない。棚の上に種類を」）
+  function labelBoxes(v, s) {
+    var ctx = v.ctx, T = v.T, out = [];
+    // 1マスが小さい（40px 未満）ときは名前を出さない。ただしスマホの「全体」では、肉の棚だけは出す（どの部位か分かるように）
     var meatOnly = T < 40;
-    if (meatOnly && !v.phone) return;
-    var fs = v.phone ? (meatOnly ? 12 : 13) : Math.round(Math.max(12, Math.min(14, T * 0.19)));
-    ctx.font = '600 ' + fs + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    var ws = {}, list = s.stations.filter(function (st) { var pm = D.stations[st.type].provides; return !meatOnly || (pm && meatOf(pm)); });
-    list.forEach(function (st) { ws[st.x + ',' + st.y] = ctx.measureText(D.stations[st.type].label).width + 8; });
-    list.forEach(function (st) {
-      var x = px(v, st.x) + T / 2, y = py(v, st.y) + T * 0.8;
-      var t = D.stations[st.type].label, w = ws[st.x + ',' + st.y], wl = ws[(st.x - 1) + ',' + st.y];
-      if (st.x % 2 && wl && (w + wl) / 2 > T - 2) y += fs * 1.3;   // 左隣の名前と重なるなら、1つおきに下へずらす
-      var pm = D.stations[st.type].provides, mt = pm && meatOf(pm);
-      // ショーケースの名前は部位の色の札（同じ赤い肉の絵でも、どの部位か分かるように）
-      ctx.fillStyle = mt ? mt.color : 'rgba(17,19,26,.72)'; rr(ctx, x - w / 2, y - fs * 0.62, w, fs * 1.24, 4); ctx.fill();
-      if (mt) { ctx.strokeStyle = 'rgba(17,19,26,.85)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.font = '800 ' + fs + 'px ' + FONT; }
-      ctx.fillStyle = mt ? inkOn(mt.color) : 'rgba(243,237,228,.9)'; ctx.fillText(t, x, y + 0.5);
-      if (mt) ctx.font = '600 ' + fs + 'px ' + FONT;
+    if (meatOnly && !v.phone) return out;
+    var fs = v.phone ? (meatOnly ? 12 : 13) : Math.round(Math.max(12, Math.min(14, T * 0.19))), h = fs * 1.24, maxW = T - 2;
+    s.stations.forEach(function (st) {
+      var mt = shelfMeat(st);
+      if (meatOnly && !mt) return;
+      var t = D.stations[st.type].label, f = fs;
+      ctx.font = (mt ? '800 ' : '600 ') + f + 'px ' + FONT;
+      if (mt) {
+        // 肉の棚の長い名前：まず文字を 11px まで小さくする。それでも詰めすぎになるなら頭の2文字にする（色は部位ごとに違う）
+        while (f > 11 && ctx.measureText(t).width > maxW - 4) { f--; ctx.font = '800 ' + f + 'px ' + FONT; }
+        if (ctx.measureText(t).width * 0.78 > maxW - 4) { t = t.slice(0, 2); f = fs; ctx.font = '800 ' + f + 'px ' + FONT; }
+      }
+      var below = !mt && E.stationAt(s, st.x, st.y + 1);
+      var y = mt ? py(v, st.y) - T * 0.25 - 2 + h / 2   // 棚の絵は1マスより 1/4 だけ上に伸びている。札は棚の上の縁に載せて、中の肉を隠さない
+        : (below && shelfMeat(below) ? py(v, st.y) + T * 0.75 - h / 2 - 4 : py(v, st.y) + T * 0.8);   // すぐ下が肉の棚なら、その札にかからないよう少し上へ
+      out.push({ st: st, t: t, mt: mt, fs: f, h: h, w: Math.min(ctx.measureText(t).width + 8, maxW), x: px(v, st.x) + T / 2, y: y });
+    });
+    return out;
+  }
+  R.labelBoxes = labelBoxes;
+  function drawLabels(v, s) {
+    var ctx = v.ctx;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    labelBoxes(v, s).forEach(function (b) {
+      ctx.font = (b.mt ? '800 ' : '600 ') + b.fs + 'px ' + FONT;
+      // 肉の棚の名前は部位の色の札（同じ赤い肉の絵でも、どの部位か分かるように）
+      ctx.fillStyle = b.mt ? b.mt.color : 'rgba(17,19,26,.72)'; rr(ctx, b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, 4); ctx.fill();
+      if (b.mt) { ctx.strokeStyle = 'rgba(17,19,26,.85)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+      ctx.fillStyle = b.mt ? inkOn(b.mt.color) : 'rgba(243,237,228,.9)'; ctx.fillText(b.t, b.x, b.y + 0.5, Math.max(1, b.w - 4));
     });
   }
   var _t = 0, _v = null; function time0() { return _t; }
@@ -1107,7 +1124,7 @@ var WK = (typeof WK !== 'undefined') ? WK : {};
       pending.push({ bar: st.washT / (st.type === 'sink' ? D.work.wash : D.washerSec), x: cx, y: y - 4, color: '#9fd0ff' });
     if (st.type === 'board' && st.appT > 0 && st.item && st.item.k === 'plates')
       pending.push({ bar: st.appT / (D.work.app + D.work.appPer * ((st.item.n || 1) - 1)), x: cx, y: y - 4, color: '#9fdc7e' });
-    if (st.isNew && s.phase === 'prep') pending.push({ tag: _v && _v.phone ? '新' : 'NEW', x: cx, y: y - 2 });   // スマホは1文字（並ぶと重なった）
+    if (st.isNew && s.phase === 'prep') pending.push({ tag: _v && _v.phone ? '新' : 'NEW', x: cx, y: shelfMeat(st) ? y + 34 : y - 2 });   // スマホは1文字（並ぶと重なった）。肉の棚は上面に名前があるので前面に
     if (lifted) { b.ctx.strokeStyle = C.gold; b.ctx.lineWidth = 1; b.ctx.strokeRect(x + 0.5, y + 0.5, 31, 39); }
   }
 

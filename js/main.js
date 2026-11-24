@@ -497,7 +497,7 @@
     // 検証用（コンソール）
     // 検証用：画面が隠れていて rAF が止まっていても、時間を進めて描ける
     window.WKdebug = {
-      state: function () { return s; }, act: act, E: E, B: B, input: input,
+      state: function () { return s; }, view: function () { return view; }, act: act, E: E, B: B, input: input,
       advance: function (sec, inp) {
         var n = Math.round(sec * 60);
         for (var i = 0; i < n; i++) { if (inp) { var o = typeof inp === 'function' ? inp(i) : inp; Object.assign(input, o); } tick(1 / 60); }
